@@ -1,0 +1,83 @@
+source 'https://github.com/CocoaPods/Specs.git'
+source 'https://github.com/TuyaInc/TuyaPublicSpecs.git'
+
+source 'https://github.com/tuya/tuya-pod-specs.git'
+
+platform :ios, '12.0'
+
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+# 请替换'DemoApp'为您App的Target名称
+# Please replace 'DemoApp' with your app target name
+target 'Runner' do
+  use_frameworks! :linkage => :static
+  use_modular_headers!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  pod 'ThingSmartHomeKit'
+  pod 'ThingSmartActivatorBizBundle'
+
+  # 构建和获取 ThingSmartCryption：从 IoT Tuya 开发者中心 构建并获取 ThingSmartCryption，详细教程请参考：构建 ThingSmartCryption 指南。
+  # Building and Obtaining ThingSmartCryption from iot.tuya.com：Build and obtain ThingSmartCryption from IoT Tuya Developer Center. For a detailed tutorial, please refer to: ThingSmartCryption Building and Retrieval Guide.
+  # 购买正式版后的下一步：一旦您购买了正式版，需要在 IoT 平台重新构建 SDK，并下载相关的 ZIP 文件。随后，进行重新集成以确保您的项目能够充分利用 Tuya 提供的功能。
+  # Next Steps After Purchasing the Official Version: After purchasing the official version, proceed to rebuild the SDK on the IoT platform and download the related ZIP file. Then, reintegrate to ensure your project fully leverages the functionalities provided by Tuya.
+  pod 'ThingSmartCryption', :path => './'
+
+
+end
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+    target.build_configurations.each do |config|
+      config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "12.0"
+      config.build_settings["EXCLUDED_ARCHS[sdk=iphonesimulator*]"] = "arm64"
+
+      # 为使用 use_frameworks! 时添加 Flutter 框架搜索路径
+      # 使用 Flutter 引擎的实际路径（支持多种可能的路径）
+      flutter_framework_paths = [
+        File.join(flutter_root, 'bin', 'cache', 'artifacts', 'engine', 'ios'),
+        File.join(flutter_root, 'bin', 'cache', 'artifacts', 'engine', 'ios-release'),
+        File.join(flutter_root, 'bin', 'cache', 'artifacts', 'engine', 'ios-profile'),
+      ]
+      
+      flutter_framework_path = flutter_framework_paths.find { |path| Dir.exist?(path) }
+      
+      if flutter_framework_path
+        config.build_settings["HEADER_SEARCH_PATHS"] ||= ["$(inherited)"]
+        config.build_settings["HEADER_SEARCH_PATHS"] << "\"#{flutter_framework_path}/Flutter.framework/Headers\""
+        config.build_settings["HEADER_SEARCH_PATHS"] << "\"#{flutter_framework_path}/Flutter.framework/Headers/Flutter\""
+        config.build_settings["FRAMEWORK_SEARCH_PATHS"] ||= ["$(inherited)"]
+        config.build_settings["FRAMEWORK_SEARCH_PATHS"] << "\"#{flutter_framework_path}\""
+      end
+
+      # 请替换为您的 TeamID
+      # replace to your teamid
+      config.build_settings["DEVELOPMENT_TEAM"] = "352267271@qq.com"
+    end
+  end
+end

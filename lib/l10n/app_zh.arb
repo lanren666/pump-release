@@ -1,0 +1,136 @@
+{
+  "@@locale": "zh",
+  "appTitle": "可穿戴吸奶器",
+  "devicesNotSynchronized": "设备未同步。您只能同时停止两个设备或分别控制它们。",
+  "switchToLeftOrRight": "切换到\"左侧\"或\"右侧\"以单独控制每个设备。",
+  "customFlow": "自定义流程",
+  "customFlowInstruction": "通过添加阶段创建自定义泵奶流程。每个阶段可以是刺激（快速节奏）或吸乳（较慢节奏）。",
+  "mode": "模式",
+  "stimulation": "刺激",
+  "expression": "吸乳",
+  "duration": "流程时长",
+  "minutes": "分钟",
+  "stimulationDescription": "快速节奏以激发奶阵",
+  "expressionDescription": "较慢节奏以高效吸乳",
+  "addPhase": "添加阶段",
+  "flowSummary": "流程摘要",
+  "totalMinutes": "总计：{totalMinutes} 分钟",
+  "@totalMinutes": {
+    "placeholders": {
+      "totalMinutes": {
+        "type": "int"
+      }
+    }
+  },
+  "saveCustomFlow": "保存自定义流程",
+  "customFlowSettingDesc": "自定义泵奶流程设置",
+  "deviceSettings": "吸奶器设置",
+  "systemSettings": "系统设置",
+  "deviceSideSettings": "吸奶器单边设置",
+  "left": "左侧",
+  "right": "右侧",
+  "switchToRightSide": "切换到右侧",
+  "switchToLeftSide": "切换到左侧",
+  "deviceSideSettingsHint": "如果您已切吸奶器使用侧边位置，请交换侧边分配",
+  "battery": "电量：",
+  "settingsSaved": "设置保存成功",
+  "saveSettings": "保存设置",
+  "breastPumpControl": "吸奶器控制",
+  "connectYourWearableBreastPump": "连接您的可穿戴吸奶器",
+  "searching": "搜索中...",
+  "searchForDevices": "搜索设备",
+  "availableDevices": "可用设备",
+  "pairedDevices": "已配对设备",
+  "continueToControl": "前往控制",
+  "connectedToDevice": "已连接到 {deviceName} ({side})。",
+  "@connectedToDevice": {
+    "placeholders": {
+      "deviceName": {
+        "type": "String"
+      },
+      "side": {
+        "type": "String"
+      }
+    }
+  },
+  "deviceRemoved": "设备已移除",
+  "foundDevices": "找到 {count} 个设备",
+  "@foundDevices": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectPumpSide": "选择吸奶器侧边分配",
+  "failedToConnect": "连接 {deviceName} 失败",
+  "@failedToConnect": {
+    "placeholders": {
+      "deviceName": {
+        "type": "String"
+      }
+    }
+  },
+  "errorConnecting": "连接 {deviceName} 时出错：{error}",
+  "@errorConnecting": {
+    "placeholders": {
+      "deviceName": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "leftSide": "左侧",
+  "rightSide": "右侧",
+  "connecting": "连接中...",
+  "connect": "连接",
+  "pumpControl": "吸奶器控制",
+  "selectWhichPumpToControl": "选择要控制的吸奶器",
+  "both": "两侧",
+  "deviceStatus": "设备状态",
+  "notAvailable": "不可用",
+  "connected": "已连接",
+  "disconnected": "未连接",
+  "sessionSettings": "流程设置",
+  "defaultMode": "默认",
+  "custom": "自定义",
+  "defaultFlow": "默认流程",
+  "customFlow": "自定义流程",
+  "max": "最大：",
+  "phase": "阶段",
+  "stim": "刺激",
+  "expr": "吸乳",
+  "intensitySettings": "强度设置",
+  "suctionLevel": "吸力级别",
+  "suction": "吸力",
+  "hybridPattern": "混合模式",
+  "hybrid": "混合",
+  "hybridPatternDescription": "2短 + 1长",
+  "hybridPatternDescriptionShort": "2短 + 1长",
+  "pause": "暂停",
+  "start": "开始",
+  "stop": "停止",
+  "switchMode": "切换",
+  "manageConnections": "管理连接",
+  "databaseDebug": "数据库调试",
+  "clearAllData": "清除所有数据",
+  "clearAllDataConfirm": "这将删除所有已保存的设备和设置。您确定吗？",
+  "cancel": "取消",
+  "clear": "清除",
+  "allDataCleared": "所有数据已清除",
+  "autoSwitchEnabled": "自动切换已启用",
+  "debugInfoTemporary": "调试信息（临时）：",
+  "language": "语言",
+  "english": "English",
+  "chinese": "中文",
+  "bluetoothDisabled": "蓝牙未开启",
+  "bluetoothDisabledMessage": "请开启蓝牙以搜索设备。",
+  "openSettings": "打开设置",
+  "runningStateDialogTitle": "提示",
+  "bothModeRunningMessage": "同步控制运行中，需要先停止，再进入单侧控制",
+  "singleSideRunningMessage": "单侧控制运行中，需要先停止，再进入同步控制",
+  "ok": "好的"
+}
+

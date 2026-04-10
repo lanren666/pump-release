@@ -1,0 +1,6 @@
+framework module ThingSmartCryption {
+  umbrella header "ThingSmartCryption-iOS-umbrella.h"
+
+  export *
+  module * { export * }
+}

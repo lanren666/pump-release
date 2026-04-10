@@ -1,0 +1,399 @@
+{
+  "@@locale": "en",
+  "appTitle": "Wearable Breast Pump",
+  "@appTitle": {
+    "description": "The title of the application"
+  },
+  "devicesNotSynchronized": "Devices are not synchronized. You can only stop both devices or control them separately.",
+  "@devicesNotSynchronized": {
+    "description": "Warning message when devices are not synchronized"
+  },
+  "switchToLeftOrRight": "Switch to \"Left\" or \"Right\" to control each device individually.",
+  "@switchToLeftOrRight": {
+    "description": "Instruction to switch to individual device control"
+  },
+  "customFlow": "Custom Flow",
+  "@customFlow": {
+    "description": "Title for custom flow page"
+  },
+  "customFlowInstruction": "Create a custom pumping session by adding phases. Each phase can be either stimulation (fast rhythm) or expression (slower rhythm).",
+  "@customFlowInstruction": {
+    "description": "Instruction text for custom flow page"
+  },
+  "mode": "Mode",
+  "@mode": {
+    "description": "Label for phase mode"
+  },
+  "stimulation": "Stimulation",
+  "@stimulation": {
+    "description": "Stimulation mode name"
+  },
+  "expression": "Expression",
+  "@expression": {
+    "description": "Expression mode name"
+  },
+  "duration": "Duration",
+  "@duration": {
+    "description": "Label for phase duration"
+  },
+  "minutes": "min",
+  "@minutes": {
+    "description": "Abbreviation for minutes"
+  },
+  "stimulationDescription": "Fast rhythm to trigger milk letdown",
+  "@stimulationDescription": {
+    "description": "Description for stimulation mode"
+  },
+  "expressionDescription": "Slower rhythm to express milk efficiently",
+  "@expressionDescription": {
+    "description": "Description for expression mode"
+  },
+  "addPhase": "Add Phase",
+  "@addPhase": {
+    "description": "Button text to add a new phase"
+  },
+  "flowSummary": "Flow Summary",
+  "@flowSummary": {
+    "description": "Title for flow summary section"
+  },
+  "totalMinutes": "Total: {totalMinutes} minutes",
+  "@totalMinutes": {
+    "description": "Total duration text with parameter",
+    "placeholders": {
+      "totalMinutes": {
+        "type": "int"
+      }
+    }
+  },
+  "saveCustomFlow": "Save Custom Flow",
+  "@saveCustomFlow": {
+    "description": "Button text to save custom flow"
+  },
+  "customFlowSettingDesc": "Custom pumping flow configuration",
+  "@customFlowSettingDesc": {
+    "description": "Description for custom flow setting in database"
+  },
+  "deviceSettings": "Device Settings",
+  "@deviceSettings": {
+    "description": "Title for device settings page"
+  },
+  "systemSettings": "System Settings",
+  "@systemSettings": {
+    "description": "Title for system settings page"
+  },
+  "deviceSideSettings": "Device Side Settings",
+  "@deviceSideSettings": {
+    "description": "Title for device side settings section"
+  },
+  "left": "Left",
+  "@left": {
+    "description": "Left side label"
+  },
+  "right": "Right",
+  "@right": {
+    "description": "Right side label"
+  },
+  "switchToRightSide": "Switch to Right Side",
+  "@switchToRightSide": {
+    "description": "Button text to switch device to right side"
+  },
+  "switchToLeftSide": "Switch to Left Side",
+  "@switchToLeftSide": {
+    "description": "Button text to switch device to left side"
+  },
+  "deviceSideSettingsHint": "Swap the side assignment if you've switched the physical pump position",
+  "@deviceSideSettingsHint": {
+    "description": "Hint text for device side settings"
+  },
+  "battery": "Battery: ",
+  "@battery": {
+    "description": "Battery label"
+  },
+  "settingsSaved": "Settings saved",
+  "@settingsSaved": {
+    "description": "Message shown when settings are saved"
+  },
+  "saveSettings": "Save Settings",
+  "@saveSettings": {
+    "description": "Button text to save settings"
+  },
+  "breastPumpControl": "Breast Pump Control",
+  "@breastPumpControl": {
+    "description": "Title for home page"
+  },
+  "connectYourWearableBreastPump": "Connect your wearable breast pump",
+  "@connectYourWearableBreastPump": {
+    "description": "Subtitle for home page"
+  },
+  "searching": "Searching...",
+  "@searching": {
+    "description": "Searching status text"
+  },
+  "searchForDevices": "Search for Devices",
+  "@searchForDevices": {
+    "description": "Button text to search for devices"
+  },
+  "availableDevices": "Available Devices",
+  "@availableDevices": {
+    "description": "Title for available devices section"
+  },
+  "pairedDevices": "Paired Devices",
+  "@pairedDevices": {
+    "description": "Title for paired devices section"
+  },
+  "continueToControl": "Continue to Control",
+  "@continueToControl": {
+    "description": "Button text to continue to control page"
+  },
+  "connectedToDevice": "Connected to {deviceName} ({side}).",
+  "@connectedToDevice": {
+    "description": "Message when device is connected",
+    "placeholders": {
+      "deviceName": {
+        "type": "String"
+      },
+      "side": {
+        "type": "String"
+      }
+    }
+  },
+  "deviceRemoved": "Device removed",
+  "@deviceRemoved": {
+    "description": "Message when device is removed"
+  },
+  "foundDevices": "Found {count} {count, plural, =1{device} other{devices}}",
+  "@foundDevices": {
+    "description": "Message when devices are found",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "selectPumpSide": "Select Pump Side",
+  "@selectPumpSide": {
+    "description": "Title for pump side selection dialog"
+  },
+  "failedToConnect": "Failed to connect to {deviceName}",
+  "@failedToConnect": {
+    "description": "Error message when connection fails",
+    "placeholders": {
+      "deviceName": {
+        "type": "String"
+      }
+    }
+  },
+  "errorConnecting": "Error connecting to {deviceName}: {error}",
+  "@errorConnecting": {
+    "description": "Error message when connection error occurs",
+    "placeholders": {
+      "deviceName": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "leftSide": "Left Side",
+  "@leftSide": {
+    "description": "Left side option label"
+  },
+  "rightSide": "Right Side",
+  "@rightSide": {
+    "description": "Right side option label"
+  },
+  "connecting": "Connecting...",
+  "@connecting": {
+    "description": "Connecting status text"
+  },
+  "connect": "Connect",
+  "@connect": {
+    "description": "Button text to connect device"
+  },
+  "pumpControl": "Pump Control",
+  "@pumpControl": {
+    "description": "Title for control page"
+  },
+  "selectWhichPumpToControl": "Select which pump(s) to control",
+  "@selectWhichPumpToControl": {
+    "description": "Instruction text for pump selection"
+  },
+  "both": "Both",
+  "@both": {
+    "description": "Both pumps option"
+  },
+  "deviceStatus": "Device Status",
+  "@deviceStatus": {
+    "description": "Device status section title"
+  },
+  "notAvailable": "N/A",
+  "@notAvailable": {
+    "description": "Not available text"
+  },
+  "connected": "connected",
+  "@connected": {
+    "description": "Device connected status"
+  },
+  "disconnected": "disconnected",
+  "@disconnected": {
+    "description": "Device disconnected status"
+  },
+  "sessionSettings": "Session Settings",
+  "@sessionSettings": {
+    "description": "Session settings section title"
+  },
+  "defaultMode": "Default",
+  "@defaultMode": {
+    "description": "Default mode"
+  },
+  "custom": "Custom",
+  "@custom": {
+    "description": "Custom mode"
+  },
+  "defaultFlow": "Default Flow",
+  "@defaultFlow": {
+    "description": "Default flow button text"
+  },
+  "customFlow": "Custom Flow",
+  "@customFlow": {
+    "description": "Custom flow button text"
+  },
+  "max": "Max:",
+  "@max": {
+    "description": "Maximum label"
+  },
+  "phase": "Phase",
+  "@phase": {
+    "description": "Phase label"
+  },
+  "stim": "Stim",
+  "@stim": {
+    "description": "Abbreviation for Stimulation"
+  },
+  "expr": "Expr",
+  "@expr": {
+    "description": "Abbreviation for Expression"
+  },
+  "intensitySettings": "Intensity Settings",
+  "@intensitySettings": {
+    "description": "Intensity settings section title"
+  },
+  "suctionLevel": "Suction level",
+  "@suctionLevel": {
+    "description": "Suction level label"
+  },
+  "suction": "Suction",
+  "@suction": {
+    "description": "Suction label (short form)"
+  },
+  "hybridPattern": "Hybrid Pattern",
+  "@hybridPattern": {
+    "description": "Hybrid pattern label"
+  },
+  "hybrid": "Hybrid",
+  "@hybrid": {
+    "description": "Hybrid label (short form)"
+  },
+  "hybridPatternDescription": "2 short + 1 long",
+  "@hybridPatternDescription": {
+    "description": "Hybrid pattern description"
+  },
+  "hybridPatternDescriptionShort": "2s + 1L",
+  "@hybridPatternDescriptionShort": {
+    "description": "Hybrid pattern description (short form)"
+  },
+  "pause": "Pause",
+  "@pause": {
+    "description": "Pause button text"
+  },
+  "start": "Start",
+  "@start": {
+    "description": "Start button text"
+  },
+  "stop": "Stop",
+  "@stop": {
+    "description": "Stop button text"
+  },
+  "switchMode": "Switch",
+  "@switchMode": {
+    "description": "Switch button text"
+  },
+  "manageConnections": "Manage Connections",
+  "@manageConnections": {
+    "description": "Menu item to manage device connections"
+  },
+  "databaseDebug": "Database Debug",
+  "@databaseDebug": {
+    "description": "Menu item for database debug page"
+  },
+  "clearAllData": "Clear All Data",
+  "@clearAllData": {
+    "description": "Menu item to clear all data"
+  },
+  "clearAllDataConfirm": "This will delete all saved devices and settings. Are you sure?",
+  "@clearAllDataConfirm": {
+    "description": "Confirmation message for clearing all data"
+  },
+  "cancel": "Cancel",
+  "@cancel": {
+    "description": "Cancel button text"
+  },
+  "clear": "Clear",
+  "@clear": {
+    "description": "Clear button text"
+  },
+  "allDataCleared": "All data cleared",
+  "@allDataCleared": {
+    "description": "Message shown when all data is cleared"
+  },
+  "autoSwitchEnabled": "Auto-switch enabled",
+  "@autoSwitchEnabled": {
+    "description": "Text indicating auto-switch is enabled"
+  },
+  "debugInfoTemporary": "Debug Info (Temporary):",
+  "@debugInfoTemporary": {
+    "description": "Title for temporary debug information"
+  },
+  "language": "Language",
+  "@language": {
+    "description": "Language setting label"
+  },
+  "english": "English",
+  "@english": {
+    "description": "English language option"
+  },
+  "chinese": "中文",
+  "@chinese": {
+    "description": "Chinese language option"
+  },
+  "bluetoothDisabled": "Bluetooth is disabled",
+  "@bluetoothDisabled": {
+    "description": "Title for bluetooth disabled dialog"
+  },
+  "bluetoothDisabledMessage": "Please enable Bluetooth to search for devices.",
+  "@bluetoothDisabledMessage": {
+    "description": "Message for bluetooth disabled dialog"
+  },
+  "openSettings": "Open Settings",
+  "@openSettings": {
+    "description": "Button text to open device settings"
+  },
+  "runningStateDialogTitle": "Notice",
+  "@runningStateDialogTitle": {
+    "description": "Title for running state dialog"
+  },
+  "bothModeRunningMessage": "running with both side, please stop first to control individual side",
+  "@bothModeRunningMessage": {
+    "description": "Message when both sides are running and user tries to switch to single side"
+  },
+  "singleSideRunningMessage": "running with individual side, please stop first to control both side",
+  "@singleSideRunningMessage": {
+    "description": "Message when single side is running and user tries to switch to both mode"
+  },
+  "ok": "OK",
+  "@ok": {
+    "description": "OK button text"
+  }
+}
+
