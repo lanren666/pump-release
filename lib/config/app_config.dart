@@ -21,6 +21,15 @@ class AppConfig {
   /// false: 禁用调试功能
   static const bool debug = false;
 
+  /// Internal / beta only: file diagnostic logs + export button in System Settings.
+  /// Enable at build time (not editable at runtime):
+  /// `flutter build apk --dart-define=INTERNAL_DIAGNOSTICS=true`
+  /// Default false: no log files, no export UI, no extra I/O.
+  static const bool diagnosticsEnabled = bool.fromEnvironment(
+    'INTERNAL_DIAGNOSTICS',
+    defaultValue: false,
+  );
+
   /// Mock设备列表（用于测试，当tuyaEnabled为false时使用）
   static final List<BluetoothDevice> mockDevices = [
     BluetoothDevice(

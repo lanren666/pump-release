@@ -394,6 +394,22 @@
   "ok": "OK",
   "@ok": {
     "description": "OK button text"
+  },
+  "diagnosticsSection": "Diagnostics",
+  "@diagnosticsSection": {
+    "description": "Section title for diagnostic logs"
+  },
+  "exportDiagnosticLogs": "Export diagnostic logs",
+  "@exportDiagnosticLogs": {
+    "description": "Button to share diagnostic log files"
+  },
+  "diagnosticLogsHint": "Exports recent app and hardware communication logs for troubleshooting.",
+  "@diagnosticLogsHint": {
+    "description": "Hint under export diagnostic logs"
+  },
+  "exportLogsFailed": "Could not export logs. Please try again.",
+  "@exportLogsFailed": {
+    "description": "Shown when log export fails"
   }
 }
 

@@ -6,6 +6,7 @@ import 'package:pump/config/app_config.dart';
 import 'ble_types.dart';
 import 'dp_constants.dart';
 import '../../services/database_service.dart';
+import '../diagnostics/app_logger.dart';
 
 // BLE DP 相关操作
 class BleDpService {
@@ -31,6 +32,10 @@ class BleDpService {
       debugPrint(
         '⚠️ 涂鸦功能已禁用，跳过下发DP $deviceId, dps: ${dps.map((dp) => dp.toJson()).toList()}',
       );
+      AppLogger.user('publishDps skipped (tuya off)', {
+        'bluetoothId': deviceId,
+        'dpCount': dps.length,
+      });
       return true;
     }
 
@@ -40,15 +45,28 @@ class BleDpService {
       final device = await _dbService.getDeviceByBluetoothId(deviceId);
       if (device == null) {
         debugPrint('⚠️ 设备未找到 $deviceId');
+        AppLogger.e('hw', 'publishDps device not found', {'bluetoothId': deviceId});
         throw Exception('Device not found');
       }
 
-      final result = await _methodChannel.invokeMethod('publishDps', {
-        'deviceId': device.devId,
-        'dps': dps.map((dp) => dp.toJson()).toList(),
+      final payload = dps.map((dp) => dp.toJson()).toList();
+      AppLogger.hardware('publishDps invoke', {
+        'bluetoothId': deviceId,
+        'devId': device.devId,
+        'dps': payload,
         'timeout': timeout,
       });
-      return result == true;
+      final result = await _methodChannel.invokeMethod('publishDps', {
+        'deviceId': device.devId,
+        'dps': payload,
+        'timeout': timeout,
+      });
+      final ok = result == true;
+      AppLogger.hardware(ok ? 'publishDps ok' : 'publishDps failed', {
+        'devId': device.devId,
+        'ok': ok,
+      });
+      return ok;
     } on PlatformException catch (e) {
       // 从details中提取错误码和详细信息
       final details = e.details as Map<dynamic, dynamic>?;
@@ -61,9 +79,14 @@ class BleDpService {
 
       // 如果已经有详细的错误信息（来自Android端的处理），直接使用
       if (errorMessage.isNotEmpty && errorMessage != 'Unknown error') {
-        debugPrint(
-          '⚠️ 下发DP失败 $deviceId, dps: ${dps.map((dp) => dp.toJson()).toList()}, error: $errorMessage',
-        );
+      debugPrint(
+        '⚠️ 下发DP失败 $deviceId, dps: ${dps.map((dp) => dp.toJson()).toList()}, error: $errorMessage',
+      );
+        AppLogger.e('hw', 'publishDps PlatformException', {
+          'bluetoothId': deviceId,
+          'code': errorCode,
+          'message': errorMessage,
+        });
         return false;
       }
 
@@ -74,6 +97,10 @@ class BleDpService {
       debugPrint(
         '⚠️ 下发DP失败 $deviceId, dps: ${dps.map((dp) => dp.toJson()).toList()}, error: $fullError',
       );
+      AppLogger.e('hw', 'publishDps failed', {
+        'bluetoothId': deviceId,
+        'error': fullError,
+      });
       return false;
     }
   }
@@ -108,13 +135,20 @@ class BleDpService {
         throw Exception('Device not found');
       }
 
+      AppLogger.hardware('getDp invoke', {
+        'bluetoothId': deviceId,
+        'devId': device.devId,
+        'dpId': dpId,
+      });
       final result = await _methodChannel.invokeMethod('getDp', {
         'deviceId': device.devId,
         'dpId': dpId,
       });
 
       if (result is Map) {
-        return Map<String, dynamic>.from(result);
+        final m = Map<String, dynamic>.from(result);
+        AppLogger.hardware('getDp ok', {'devId': device.devId, 'dpId': dpId, 'keys': m.keys.toList()});
+        return m;
       } else {
         throw Exception('Invalid response format: $result');
       }
@@ -124,6 +158,12 @@ class BleDpService {
       final errorMessage = e.message ?? 'Unknown error';
 
       debugPrint("Error getting DP: code=$errorCode, message=$errorMessage");
+      AppLogger.e('hw', 'getDp PlatformException', {
+        'bluetoothId': deviceId,
+        'dpId': dpId,
+        'code': errorCode,
+        'message': errorMessage,
+      });
 
       throw Exception(
         errorCode != null
@@ -156,6 +196,12 @@ class BleDpService {
                 final reportData = DpReportData.fromJson(
                   eventData['data'] as Map<String, dynamic>,
                 );
+                AppLogger.hardware('dp report from device', {
+                  'deviceId': reportData.deviceId,
+                  'dpCount': reportData.dps.length,
+                  'dps': reportData.dps.map((e) => e.toJson()).toList(),
+                  'ts': reportData.timestamp,
+                });
                 _dpReportController.add(reportData);
               } catch (e) {
                 debugPrint("Error parsing DP report data: $e");

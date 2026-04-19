@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../database_service.dart';
+import '../diagnostics/app_logger.dart';
 import '../../models/setting.dart';
 
 // 涂鸦 SDK 相关操作
@@ -15,6 +16,7 @@ class TuyaSdkService {
     try {
       final bool result =
           await _channel.invokeMethod('checkSDKInitialized') ?? false;
+      AppLogger.sdk('checkSDKInitialized', {'ok': result});
       if (result) {
         debugPrint('✅ Tuya SDK 初始化成功');
         return true;
@@ -24,6 +26,7 @@ class TuyaSdkService {
       }
     } on PlatformException catch (e) {
       debugPrint('❌ Tuya SDK 初始化检查出错: ${e.message}');
+      AppLogger.e('sdk', 'checkSDKInitialized', {'message': e.message});
       return false;
     }
   }
@@ -33,6 +36,7 @@ class TuyaSdkService {
     try {
       final bool result =
           await _channel.invokeMethod('loginAnonymous') ?? false;
+      AppLogger.sdk('loginAnonymous', {'ok': result});
       if (result) {
         debugPrint('✅ 匿名登录成功');
         return true;
@@ -42,6 +46,7 @@ class TuyaSdkService {
       }
     } on PlatformException catch (e) {
       debugPrint('❌ 匿名登录出错: ${e.message}');
+      AppLogger.e('sdk', 'loginAnonymous', {'message': e.message});
       return false;
     }
   }
@@ -54,13 +59,16 @@ class TuyaSdkService {
         debugPrint('✅ 获取家庭列表成功: $result');
         final List<dynamic> homes = jsonDecode(result);
         debugPrint('找到 ${homes.length} 个家庭');
+        AppLogger.sdk('getHomeList', {'homeCount': homes.length});
         return homes.cast<Map<String, dynamic>>();
       } else {
         debugPrint('❌ 获取家庭列表失败: 返回为空');
+        AppLogger.w('sdk', 'getHomeList empty', null);
         return [];
       }
     } on PlatformException catch (e) {
       debugPrint('❌ 获取家庭列表出错: ${e.message}');
+      AppLogger.e('sdk', 'getHomeList', {'message': e.message});
       return [];
     }
   }
@@ -81,6 +89,7 @@ class TuyaSdkService {
 
       if (homeId != null && homeId.isNotEmpty) {
         debugPrint('✅ 创建家庭成功: homeId=$homeId');
+        AppLogger.sdk('addHome', {'homeId': homeId});
         return homeId;
       } else {
         debugPrint('❌ 创建家庭失败: 返回为空');
@@ -88,6 +97,7 @@ class TuyaSdkService {
       }
     } on PlatformException catch (e) {
       debugPrint('❌ 创建家庭出错: ${e.message}');
+      AppLogger.e('sdk', 'addHome', {'message': e.message});
       return null;
     }
   }

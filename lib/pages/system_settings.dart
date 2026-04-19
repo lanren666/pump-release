@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../config/app_color.dart';
+import '../config/app_config.dart';
 import '../config/responsive_text.dart';
 import '../config/locale_manager.dart';
 import '../services/database_service.dart';
 import '../l10n/app_localizations.dart';
 import '../models/setting.dart';
+import '../services/diagnostics/diagnostic_export_service.dart';
 
 const String _languageKey = 'app_language';
 const String _languageDesc = 'Application language setting';
@@ -22,6 +24,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   final LocaleManager _localeManager = LocaleManager();
   String _selectedLanguage = 'en'; // 默认英文
   bool _isLoading = true;
+  bool _exportingLogs = false;
 
   @override
   void initState() {
@@ -72,6 +75,23 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     }
   }
 
+  Future<void> _exportDiagnosticLogs() async {
+    setState(() => _exportingLogs = true);
+    try {
+      await DiagnosticExportService.shareDiagnosticLogs();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context)!.exportLogsFailed)),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _exportingLogs = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -105,8 +125,13 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                     children: [
                       if (_isLoading)
                         const Center(child: CircularProgressIndicator())
-                      else
+                      else ...[
                         _buildLanguageSection(),
+                        if (AppConfig.diagnosticsEnabled) ...[
+                          SizedBox(height: ResponsiveText.getSize(context, 24)),
+                          _buildDiagnosticsSection(),
+                        ],
+                      ],
                       SizedBox(height: ResponsiveText.getSize(context, 24)),
                       _buildSaveButton(),
                     ],
@@ -227,6 +252,54 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 color: AppColor.textSecondary,
               ),
               dropdownColor: AppColor.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiagnosticsSection() {
+    final l10n = AppLocalizations.of(context)!;
+    return Container(
+      padding: ResponsiveText.symmetric(context, vertical: 24, horizontal: 24),
+      decoration: BoxDecoration(
+        color: AppColor.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.2), width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.diagnosticsSection,
+            style: ResponsiveText.title(
+              context,
+              fontWeight: FontWeight.bold,
+              color: AppColor.textPrimary,
+            ),
+          ),
+          SizedBox(height: ResponsiveText.getSize(context, 12)),
+          Text(
+            l10n.diagnosticLogsHint,
+            style: ResponsiveText.bodySmall(
+              context,
+              color: AppColor.textSecondary,
+            ),
+          ),
+          SizedBox(height: ResponsiveText.getSize(context, 20)),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _exportingLogs ? null : _exportDiagnosticLogs,
+              icon: _exportingLogs
+                  ? SizedBox(
+                      width: ResponsiveText.getSize(context, 18),
+                      height: ResponsiveText.getSize(context, 18),
+                      child: const CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.ios_share_outlined),
+              label: Text(l10n.exportDiagnosticLogs),
             ),
           ),
         ],

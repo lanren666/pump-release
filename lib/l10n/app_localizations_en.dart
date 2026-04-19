@@ -303,4 +303,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ok => 'OK';
+
+  @override
+  String get diagnosticsSection => 'Diagnostics';
+
+  @override
+  String get exportDiagnosticLogs => 'Export diagnostic logs';
+
+  @override
+  String get diagnosticLogsHint =>
+      'Exports recent app and hardware communication logs for troubleshooting.';
+
+  @override
+  String get exportLogsFailed => 'Could not export logs. Please try again.';
 }

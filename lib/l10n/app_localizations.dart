@@ -637,6 +637,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'OK'**
   String get ok;
+
+  /// Section title for diagnostic logs
+  ///
+  /// In en, this message translates to:
+  /// **'Diagnostics'**
+  String get diagnosticsSection;
+
+  /// Button to share diagnostic log files
+  ///
+  /// In en, this message translates to:
+  /// **'Export diagnostic logs'**
+  String get exportDiagnosticLogs;
+
+  /// Hint under export diagnostic logs
+  ///
+  /// In en, this message translates to:
+  /// **'Exports recent app and hardware communication logs for troubleshooting.'**
+  String get diagnosticLogsHint;
+
+  /// Shown when log export fails
+  ///
+  /// In en, this message translates to:
+  /// **'Could not export logs. Please try again.'**
+  String get exportLogsFailed;
 }
 
 class _AppLocalizationsDelegate

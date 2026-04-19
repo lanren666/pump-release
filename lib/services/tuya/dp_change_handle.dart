@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../database_service.dart';
+import '../diagnostics/app_logger.dart';
 import 'dp_constants.dart';
 import 'ble_dp_service.dart';
 
@@ -99,7 +100,13 @@ class DpChangeHandle {
   }
 
   Future<void> handle(String deviceId, String dpId, dynamic dpValue) async {
-    debugPrint('✅ DP handle 上报监听: $deviceId, $dpId, $dpValue');
+    AppLogger.hardware('dp_handle', {
+      'deviceId': deviceId,
+      'dpId': dpId,
+      'value': dpId == DpConstants.sessionStatus
+          ? _truncateForLog(dpValue.toString(), 96)
+          : dpValue,
+    });
     switch (dpId) {
       case DpConstants.stimulationSucLvl:
         final device = await _dbService.getDeviceByDevId(deviceId);
@@ -169,7 +176,12 @@ class DpChangeHandle {
           _sessionStatusController.add(
             SessionStatusUpdate(deviceId: deviceId, status: parsedStatus),
           );
-          // debugPrint('✅ SessionStatus 解析成功并已发送更新: deviceId=$deviceId');
+          AppLogger.hardware('sessionStatus parsed', {
+            'deviceId': deviceId,
+            'isRunning': parsedStatus['isRunning'],
+            'sessionPhase': parsedStatus['sessionPhase'],
+            'sessionModeName': parsedStatus['sessionModeName'],
+          });
         } catch (e, stackTrace) {
           debugPrint('❌ SessionStatus 解析失败: deviceId=$deviceId, dpValue=$dpValue, error=$e');
           debugPrint('❌ Stack trace: $stackTrace');
@@ -183,9 +195,17 @@ class DpChangeHandle {
         }
         break;
       default:
-        // todo 其他dp不处理
+        AppLogger.hardware('dp_handle ignored dpId', {
+          'deviceId': deviceId,
+          'dpId': dpId,
+        });
         break;
     }
+  }
+
+  static String _truncateForLog(String s, int max) {
+    if (s.length <= max) return s;
+    return '${s.substring(0, max)}…';
   }
 
   // 解析会话状态

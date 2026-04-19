@@ -1,4 +1,6 @@
 import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -6,6 +8,7 @@ import 'l10n/app_localizations.dart';
 import 'pages/home.dart';
 import 'config/app_config.dart';
 import 'config/locale_manager.dart';
+import 'services/diagnostics/app_logger.dart';
 import 'services/tuya/dp_change_handle.dart';
 import 'services/tuya/tuya_sdk_service.dart';
 import 'services/database_service.dart';
@@ -13,30 +16,50 @@ import 'services/tuya/dp_constants.dart';
 import 'services/tuya/ble_dp_service.dart';
 
 void main() {
-// void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  runZonedGuarded(() {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // 临时：清空所有数据（用于测试）
-  // try {
-  //   final dbService = DatabaseService();
-  //   await dbService.clearAllData();
-  //   debugPrint('🧹 已清空所有数据库数据');
-  // } catch (e) {
-  //   debugPrint('❌ 清空数据库失败: $e');
-  // }
+    void startApp() {
+      if (AppConfig.diagnosticsEnabled) {
+        FlutterError.onError = (FlutterErrorDetails details) {
+          AppLogger.recordFlutterError(details);
+          FlutterError.presentError(details);
+        };
+        PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+          AppLogger.recordError(error, stack, source: 'platform');
+          return true;
+        };
+      }
 
-  // 涂鸦功能启用时才初始化SDK
-  if (AppConfig.tuyaEnabled) {
-    DpChangeHandle.init();
-    // 延迟一下等原生端准备好
-    Future.delayed(const Duration(milliseconds: 800), () {
-      TuyaSdkService.initialize();
-    });
-  } else {
-    debugPrint('涂鸦功能已禁用，跳过 SDK 初始化');
-  }
+      if (AppConfig.tuyaEnabled) {
+        DpChangeHandle.init();
+        Future.delayed(const Duration(milliseconds: 800), () {
+          TuyaSdkService.initialize();
+        });
+      } else {
+        debugPrint('涂鸦功能已禁用，跳过 SDK 初始化');
+      }
 
-  runApp(const PumpApp());
+      runApp(const PumpApp());
+    }
+
+    if (AppConfig.diagnosticsEnabled) {
+      AppLogger.ensureInitialized().then((_) {
+        startApp();
+      }).catchError((Object e, StackTrace st) {
+        debugPrint('AppLogger init failed: $e');
+        startApp();
+      });
+    } else {
+      startApp();
+    }
+  }, (Object error, StackTrace stack) {
+    if (AppConfig.diagnosticsEnabled) {
+      AppLogger.recordError(error, stack, source: 'zone');
+    } else if (kDebugMode) {
+      debugPrint('Zone error: $error\n$stack');
+    }
+  });
 }
 
 class PumpApp extends StatefulWidget {

@@ -131,6 +131,10 @@
   "runningStateDialogTitle": "提示",
   "bothModeRunningMessage": "同步控制运行中，需要先停止，再进入单侧控制",
   "singleSideRunningMessage": "单侧控制运行中，需要先停止，再进入同步控制",
-  "ok": "好的"
+  "ok": "好的",
+  "diagnosticsSection": "诊断与日志",
+  "exportDiagnosticLogs": "导出诊断日志",
+  "diagnosticLogsHint": "导出近期应用与硬件交互记录，便于内测排查问题。",
+  "exportLogsFailed": "导出失败，请重试。"
 }
 

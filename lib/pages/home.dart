@@ -14,6 +14,7 @@ import '../services/database_service.dart';
 import '../services/tuya/ble_dp_service.dart';
 import '../services/tuya/dp_constants.dart';
 import '../l10n/app_localizations.dart';
+import '../services/diagnostics/app_logger.dart';
 import 'control.dart';
 import 'widgets/pump_side_dialog.dart';
 import 'database_viewer.dart';
@@ -453,6 +454,7 @@ class _HomePageState extends State<HomePage>
   }
 
   void _startSearch() async {
+    AppLogger.user('startSearch tapped', null);
     setState(() {
       _searchState = SearchState.searching;
       _scannedDevices.clear();
@@ -467,6 +469,7 @@ class _HomePageState extends State<HomePage>
         setState(() {
           _searchState = SearchState.idle;
         });
+        AppLogger.user('startSearch blocked: bluetooth off', null);
         _showBluetoothDisabledDialog();
       }
       return;
@@ -477,6 +480,7 @@ class _HomePageState extends State<HomePage>
       try {
         // 蓝牙已开启，开始扫描
         await bleChannel.invokeMethod('startScan');
+        AppLogger.user('ble startScan invoked', null);
       } on PlatformException catch (e) {
         debugPrint('❌ 蓝牙扫描启动失败: $e');
         // 如果是蓝牙未开启的错误，显示提示对话框
@@ -1046,6 +1050,9 @@ class _HomePageState extends State<HomePage>
       width: double.infinity,
       child: ElevatedButton(
         onPressed: () {
+          AppLogger.user('navigate to ControlPage', {
+            'pairedCount': _connectedDevices.length,
+          });
           Navigator.push(
             context,
             PageRouteBuilder(
@@ -1140,6 +1147,11 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<bool> _connectDevice(BluetoothDevice device, String side) async {
+    AppLogger.user('connectDevice attempt', {
+      'bluetoothId': device.bluetoothId,
+      'name': device.name,
+      'side': side,
+    });
     final position = side == 'Left' ? 'left' : 'right';
 
     // 检查蓝牙是否已开启
@@ -1201,6 +1213,11 @@ class _HomePageState extends State<HomePage>
           result = false;
           returnedDevId = null;
         }
+        AppLogger.hardware('connectDevice native result', {
+          'bluetoothId': device.bluetoothId,
+          'success': result,
+          'returnedDevId': returnedDevId,
+        });
       } else {
         result = true;
         returnedDevId = null;
@@ -1282,21 +1299,35 @@ class _HomePageState extends State<HomePage>
         }
 
         _showConnectionMessage(device.name, side);
+        AppLogger.user('connectDevice success', {
+          'bluetoothId': device.bluetoothId,
+          'devId': newDevice.devId,
+          'position': position,
+        });
         return true;
       } else {
         debugPrint('❌ 设备连接失败: ${device.bluetoothId}');
+        AppLogger.e('user', 'connectDevice failed', {
+          'bluetoothId': device.bluetoothId,
+        });
         return false;
       }
     } on PlatformException catch (e) {
       debugPrint('❌ 连接设备出错: ${e.code} - ${e.message}');
+      AppLogger.e('user', 'connectDevice PlatformException', {
+        'code': e.code,
+        'message': e.message,
+      });
       return false;
     } catch (e) {
       debugPrint('❌ 连接设备出错: $e');
+      AppLogger.e('user', 'connectDevice error', {'error': e.toString()});
       return false;
     }
   }
 
   Future<void> _disconnectDevice(String bluetoothId) async {
+    AppLogger.user('disconnectDevice', {'bluetoothId': bluetoothId});
     final device = await _dbService.getDeviceByBluetoothId(bluetoothId);
     if (device != null) {
       if (device.devId != null &&

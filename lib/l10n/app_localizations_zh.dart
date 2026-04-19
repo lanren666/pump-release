@@ -288,4 +288,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get ok => '好的';
+
+  @override
+  String get diagnosticsSection => '诊断与日志';
+
+  @override
+  String get exportDiagnosticLogs => '导出诊断日志';
+
+  @override
+  String get diagnosticLogsHint => '导出近期应用与硬件交互记录，便于内测排查问题。';
+
+  @override
+  String get exportLogsFailed => '导出失败，请重试。';
 }
