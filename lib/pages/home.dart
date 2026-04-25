@@ -8,6 +8,7 @@ import '../config/responsive_text.dart';
 import '../config/app_config.dart';
 import '../config/ble_channels.dart';
 import '../models/connected_device.dart';
+import '../services/tuya/tuya_sdk_service.dart';
 import '../models/bluetooth_device.dart';
 import '../models/search_state.dart';
 import '../services/database_service.dart';
@@ -1182,6 +1183,26 @@ class _HomePageState extends State<HomePage>
       String? returnedDevId;
 
       if (AppConfig.tuyaEnabled) {
+        final sw = Stopwatch()..start();
+        final readyHomeId = await TuyaSdkService.ensureHomeReady(
+          timeout: const Duration(seconds: 15),
+        );
+        sw.stop();
+        AppLogger.sdk('ensureHomeReady', {
+          'ok': readyHomeId != null,
+          'elapsedMs': sw.elapsedMilliseconds,
+          'homeId': readyHomeId,
+        });
+
+        if (readyHomeId == null || readyHomeId.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('初始化中，请稍后重试')),
+            );
+          }
+          return false;
+        }
+
         final dbService = DatabaseService();
         final homeIdSetting = await dbService.getSettingByKey('tuya_home_id');
         final homeId = homeIdSetting?.value;
@@ -1193,9 +1214,10 @@ class _HomePageState extends State<HomePage>
           'timeout': 30,
         };
 
-        if (homeId != null && homeId.isNotEmpty) {
-          connectParams['homeId'] = int.parse(homeId);
-        }
+        final effectiveHomeId = (homeId != null && homeId.isNotEmpty)
+            ? homeId
+            : readyHomeId;
+        connectParams['homeId'] = int.parse(effectiveHomeId);
 
         final connectionResult = await connectionChannel.invokeMethod(
           'connectDevice',

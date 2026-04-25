@@ -33,8 +33,11 @@ void main() {
 
       if (AppConfig.tuyaEnabled) {
         DpChangeHandle.init();
+        // Warm up home preparation in background to reduce first-connect latency.
+        // iOS native channels are set up with a short delay; keep this slightly later
+        // to avoid MissingPluginException during cold start.
         Future.delayed(const Duration(milliseconds: 800), () {
-          TuyaSdkService.initialize();
+          TuyaSdkService.warmUpHomeReady();
         });
       } else {
         debugPrint('涂鸦功能已禁用，跳过 SDK 初始化');
