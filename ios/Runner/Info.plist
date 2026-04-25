@@ -40,6 +40,8 @@
 	<string>We need access to your location to get country code for device setup</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>We need access to photo library for selecting QR code images during device setup</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>We need access to the local network to discover and connect to your devices on Wi-Fi during setup and control.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>
