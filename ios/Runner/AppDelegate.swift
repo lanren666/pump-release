@@ -936,16 +936,19 @@ extension Date {
             }
         }, failure: { [weak self] in
             let errorMessage = "Device activation failed"
-            print("❌ 设备激活失败: \(errorMessage)")
+            let errorDetails: [String: Any] = [
+                "deviceId": deviceId,
+                "uuid": uuid,
+                "productKey": productKey,
+                "homeId": homeIdInt64
+            ]
+
+            print("❌ 设备激活失败: \(errorMessage), details=\(errorDetails)")
             self?.updateConnectionState(deviceId: deviceId, state: "disconnected", error: errorMessage)
             result(FlutterError(
                 code: "ACTIVATION_FAILED",
                 message: errorMessage,
-                details: [
-                    "deviceId": deviceId,
-                    "uuid": uuid,
-                    "productKey": productKey
-                ]
+                details: errorDetails
             ))
         })
     }

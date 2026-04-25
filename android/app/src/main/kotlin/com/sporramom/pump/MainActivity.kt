@@ -890,14 +890,19 @@ class MainActivity : FlutterActivity(), LocationListener {
                 }
 
                 override fun onFailure(code: Int, msg: String, handle: Any?) {
-                    val errorMessage = "Device activation failed: $msg"
+                    val errorMessage = "Device activation failed: code=$code msg=$msg handle=$handle"
                     android.util.Log.e("MainActivity", "❌ 设备激活失败: $errorMessage")
                     updateConnectionState(deviceId, "disconnected", errorMessage)
                     result.error(
-                        "ACTIVATION_FAILED", msg, mapOf(
+                        "ACTIVATION_FAILED",
+                        "code=$code msg=$msg",
+                        mapOf(
                             "deviceId" to deviceId,
                             "uuid" to uuid,
-                            "productKey" to productKey
+                            "productKey" to productKey,
+                            "tuyaCode" to code,
+                            "tuyaMsg" to msg,
+                            "tuyaHandle" to (handle?.toString() ?: "")
                         )
                     )
                 }
