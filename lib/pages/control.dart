@@ -1100,7 +1100,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
 
   /// 从数据库加载吸力级别配置；若不存在则用默认值 3 并写入数据库
   Future<void> _loadSuctionLevelSettings() async {
-    const defaultLevel = 3.0;
+    const defaultLevel = 1.0;
     double leftStim = defaultLevel;
     double leftExpr = defaultLevel;
     double rightStim = defaultLevel;
