@@ -236,13 +236,16 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
           continue;
         }
 
-        debugPrint('发现未运行的设备，尝试重连: ${device.name} (devId: ${device.devId})');
+        debugPrint(
+          '发现未运行的设备，尝试重连: ${device.name} (devId: ${device.devId}, bluetoothId: ${device.bluetoothId})',
+        );
 
         // 先检查是否已经在线
         try {
           final isOnline =
               await _connectionChannel.invokeMethod('isDeviceOnline', {
-                    'deviceId': device.devId,
+                    // iOS/Android native now accept either devId or bluetoothId; use bluetoothId to avoid cloud lookup failures.
+                    'deviceId': device.bluetoothId,
                   })
                   as bool? ??
               false;
@@ -254,9 +257,10 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
             // 注册设备监听器，确保能接收到 DP 更新和状态变化
             try {
               await _connectionChannel.invokeMethod('registerDeviceListener', {
-                'deviceId': device.devId,
+                // registerDeviceListener expects bluetoothId (uuid) on iOS.
+                'deviceId': device.bluetoothId,
               });
-              debugPrint('设备监听器注册成功: ${device.devId}');
+              debugPrint('设备监听器注册成功: ${device.bluetoothId}');
             } catch (e) {
               debugPrint('注册设备监听器失败: $e');
             }
@@ -268,17 +272,19 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
         }
 
         // 不在线就尝试连接
-        debugPrint('设备离线，尝试连接: ${device.devId}');
+        debugPrint('设备离线，尝试连接: devId=${device.devId}, bluetoothId=${device.bluetoothId}');
         try {
           final connectionResults =
               await _connectionChannel.invokeMethod('connectBleDevices', {
-                    'deviceIds': [device.devId],
+                    // Use bluetoothId (uuid) so native can connect even when cloud session/home lookup is flaky.
+                    'deviceIds': [device.bluetoothId],
                   })
                   as Map<dynamic, dynamic>?;
 
           if (connectionResults != null) {
-            final connected = connectionResults[device.devId] as bool? ?? false;
-            debugPrint('设备连接结果: ${device.devId} -> $connected');
+            final connected =
+                connectionResults[device.bluetoothId] as bool? ?? false;
+            debugPrint('设备连接结果: ${device.bluetoothId} -> $connected');
 
             await _updateDeviceRunningStatus(device.devId!, connected);
 

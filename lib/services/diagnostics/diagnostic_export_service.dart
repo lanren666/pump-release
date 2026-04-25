@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -16,7 +17,7 @@ import 'app_logger.dart';
 class DiagnosticExportService {
   DiagnosticExportService._();
 
-  static Future<void> shareDiagnosticLogs() async {
+  static Future<void> shareDiagnosticLogs({Rect? sharePositionOrigin}) async {
     if (!AppConfig.diagnosticsEnabled) {
       throw StateError('Diagnostics export is disabled for this build');
     }
@@ -83,6 +84,7 @@ class DiagnosticExportService {
             'Pump diagnostic logs ${packageInfo.version}+${packageInfo.buildNumber}',
         text:
             'Diagnostic export (version ${packageInfo.version}+${packageInfo.buildNumber})',
+        sharePositionOrigin: sharePositionOrigin,
       ),
     );
   }

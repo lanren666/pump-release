@@ -8,6 +8,7 @@ import '../services/database_service.dart';
 import '../l10n/app_localizations.dart';
 import '../models/setting.dart';
 import '../services/diagnostics/diagnostic_export_service.dart';
+import '../services/diagnostics/app_logger.dart';
 
 const String _languageKey = 'app_language';
 const String _languageDesc = 'Application language setting';
@@ -25,6 +26,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   String _selectedLanguage = 'en'; // 默认英文
   bool _isLoading = true;
   bool _exportingLogs = false;
+  final GlobalKey _exportLogsButtonKey = GlobalKey();
 
   @override
   void initState() {
@@ -78,8 +80,26 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   Future<void> _exportDiagnosticLogs() async {
     setState(() => _exportingLogs = true);
     try {
-      await DiagnosticExportService.shareDiagnosticLogs();
-    } catch (e) {
+      Rect? origin;
+      final ctx = _exportLogsButtonKey.currentContext;
+      final renderObject = ctx?.findRenderObject();
+      if (renderObject is RenderBox) {
+        final topLeft = renderObject.localToGlobal(Offset.zero);
+        origin = topLeft & renderObject.size;
+      }
+      await DiagnosticExportService.shareDiagnosticLogs(
+        sharePositionOrigin: origin,
+      );
+    } catch (e, st) {
+      debugPrint('❌ Export diagnostic logs failed: $e');
+      debugPrint(st.toString());
+      try {
+        // Best-effort: may be unavailable when diagnostics are disabled or not initialized.
+        AppLogger.e('diag', 'exportDiagnosticLogs failed', {
+          'error': e.toString(),
+          'stack': st.toString().split('\n').take(12).join('\n'),
+        });
+      } catch (_) {}
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(AppLocalizations.of(context)!.exportLogsFailed)),
@@ -291,6 +311,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
+              key: _exportLogsButtonKey,
               onPressed: _exportingLogs ? null : _exportDiagnosticLogs,
               icon: _exportingLogs
                   ? SizedBox(

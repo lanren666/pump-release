@@ -1113,10 +1113,11 @@ extension Date {
                     return
                 }
 
+                let delegateDevId = device.devId ?? deviceId
                 bleManager.connectBLE(withUUID: uuid, productKey: productKey, success: {
                     print("✅ 设备连接成功: \(deviceId)")
                     self.updateConnectionState(deviceId: deviceId, state: "connected")
-                    self.setupDeviceDelegate(deviceId: deviceId)
+                    self.setupDeviceDelegate(deviceId: delegateDevId)
                     connectionResults[deviceId] = true
                     group.leave()
                 }, failure: {
@@ -1586,7 +1587,11 @@ extension Date {
             }
 
             self.getDevicesFromHome(homeModel) { devices in
-                let device = devices?.first(where: { $0.devId == deviceId })
+                // deviceId may be a Tuya devId or a bluetooth uuid (bluetoothId in Flutter).
+                // Prefer devId match, then fallback to uuid match.
+                let device =
+                    devices?.first(where: { $0.devId == deviceId }) ??
+                    devices?.first(where: { $0.uuid == deviceId })
                 completion(device)
             }
         }
