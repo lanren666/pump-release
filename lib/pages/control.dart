@@ -131,6 +131,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   final Map<String, _PendingOperation> _pendingOperations = {};
   final Map<String, Timer> _pendingCheckTimers = {};
   static const int _toleranceDelayMs = 2500;
+  static const int _bothTimeSyncThresholdSeconds = 30; // both 模式时间容差阈值（秒）
 
   // 用于防止设备返回的旧状态覆盖用户操作
   // 记录用户最近的操作：设备ID -> (期望值, 操作时间)
@@ -306,6 +307,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             _phaseDuration = Duration(minutes: totalTimeInPhase);
           }
         }
+        _syncBothDisplayFromLeft();
       });
       // debugPrint(
       //   '✅ Control 页面已更新数据(跳过isRunning): deviceId=${update.deviceId}, timePast=${timePast}s, timePastInPhase=${timePastInPhase}s, phase=$sessionPhase',
@@ -585,6 +587,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
               _phaseDuration = Duration(minutes: totalTimeInPhase);
             }
           }
+          _syncBothDisplayFromLeft();
         });
       } else {
         // debugPrint(
@@ -683,6 +686,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             _phaseDuration = Duration(minutes: totalTimeInPhase);
           }
         }
+        _syncBothDisplayFromLeft();
       });
     }
     debugPrint(
@@ -1722,6 +1726,22 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         _phaseDuration = _leftPhaseDuration;
         break;
     }
+  }
+
+  /// both 模式下且未进入独立模式时，统一用左侧时间展示，
+  /// 避免左右设备轻微时差导致计时显示抖动。
+  bool _shouldShowBothUsingLeft() {
+    return _selectedPump == PumpSelection.both && !_isIndividualMode;
+  }
+
+  /// 将主展示时间同步为左侧设备时间（仅在 both 非独立模式生效）。
+  void _syncBothDisplayFromLeft() {
+    if (!_shouldShowBothUsingLeft()) return;
+    _elapsedTime = _leftElapsedTime;
+    _elapsedTimeInPhase = _leftElapsedTimeInPhase;
+    _currentPhase = _leftCurrentPhase;
+    _totalPhase = _leftTotalPhase;
+    _phaseDuration = _leftPhaseDuration;
   }
 
   Future<IntensityMode> _getDisplayIntensityMode() async {
@@ -3381,12 +3401,13 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     // if (_leftTotalPhase != _rightTotalPhase) {
     //   return false;
     // }
-    if ((_leftElapsedTime.inSeconds - _rightElapsedTime.inSeconds).abs() > 10) {
+    if ((_leftElapsedTime.inSeconds - _rightElapsedTime.inSeconds).abs() >
+        _bothTimeSyncThresholdSeconds) {
       return false;
     }
     if ((_leftElapsedTimeInPhase.inSeconds - _rightElapsedTimeInPhase.inSeconds)
             .abs() >
-        10) {
+        _bothTimeSyncThresholdSeconds) {
       return false;
     }
     // if (_leftPhaseDuration != _rightPhaseDuration) {
