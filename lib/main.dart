@@ -107,30 +107,31 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
       const languageKey = 'app_language';
       final languageSetting = await _dbService.getSettingByKey(languageKey);
 
-      Locale? newLocale;
+      final Locale? newLocale;
       if (languageSetting != null) {
-        if (languageSetting.value == 'zh') {
-          newLocale = const Locale('zh', 'CN');
-        } else {
-          newLocale = const Locale('en', 'US');
-        }
-      } else {
-        // 没设置就用默认的
+        newLocale = LocaleManager.localeForLanguageCode(languageSetting.value);
+      } else if (AppConfig.debugLocale != null) {
         newLocale = AppConfig.debugLocale;
+      } else {
+        // 未保存用户偏好：locale 为 null，由 MaterialApp 按系统语言解析
+        newLocale = null;
       }
 
       _localeManager.localeNotifier.value = newLocale;
 
       if (mounted) {
         setState(() {
+          _locale = newLocale;
           _isLoadingLocale = false;
         });
       }
     } catch (e) {
       debugPrint('加载语言设置失败: $e');
+      final Locale? fallbackLocale = AppConfig.debugLocale;
+      _localeManager.localeNotifier.value = fallbackLocale;
       if (mounted) {
         setState(() {
-          _locale = AppConfig.debugLocale;
+          _locale = fallbackLocale;
           _isLoadingLocale = false;
         });
       }
@@ -411,8 +412,10 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [Locale('en', 'US'), Locale('zh', 'CN')],
+      supportedLocales: LocaleManager.supportedLocales,
       locale: _locale,
+      localeResolutionCallback: (locale, supportedLocales) =>
+          LocaleManager.resolveLocale(locale),
       home: const HomePage(),
     );
   }

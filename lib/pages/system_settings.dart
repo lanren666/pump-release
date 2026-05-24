@@ -23,7 +23,7 @@ class SystemSettingsPage extends StatefulWidget {
 class _SystemSettingsPageState extends State<SystemSettingsPage> {
   final DatabaseService _dbService = DatabaseService();
   final LocaleManager _localeManager = LocaleManager();
-  String _selectedLanguage = 'en'; // 默认英文
+  String _selectedLanguage = 'en';
   bool _isLoading = true;
   bool _exportingLogs = false;
   final GlobalKey _exportLogsButtonKey = GlobalKey();
@@ -41,8 +41,8 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         if (languageSetting != null) {
           _selectedLanguage = languageSetting.value;
         } else {
-          // 没找到设置就用默认值
-          _selectedLanguage = 'en';
+          // 未保存偏好：下拉框展示当前系统语言（与首次启动时应用界面一致）
+          _selectedLanguage = LocaleManager.systemLanguageCode;
         }
         _isLoading = false;
       });
