@@ -24,7 +24,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get customFlowInstruction =>
-      'Create a custom pumping session by adding phases. Each phase can be either stimulation (fast rhythm) or expression (slower rhythm).';
+      'Create a custom pumping session by adding phases. Each phase can be either stimulation (fast rhythm) or expression (slower rhythm). Total duration of all phases cannot exceed 30 minutes.';
+
+  @override
+  String get customFlowTotalExceeded =>
+      'Total duration cannot exceed 30 minutes.';
 
   @override
   String get mode => 'Mode';

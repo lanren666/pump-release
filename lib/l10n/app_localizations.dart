@@ -128,6 +128,12 @@ abstract class AppLocalizations {
   /// **'Create a custom pumping session by adding phases. Each phase can be either stimulation (fast rhythm) or expression (slower rhythm).'**
   String get customFlowInstruction;
 
+  /// Error when custom flow total duration exceeds limit
+  ///
+  /// In en, this message translates to:
+  /// **'Total duration cannot exceed 30 minutes.'**
+  String get customFlowTotalExceeded;
+
   /// Label for phase mode
   ///
   /// In en, this message translates to:

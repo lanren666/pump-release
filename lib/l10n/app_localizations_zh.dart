@@ -22,7 +22,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get customFlowInstruction =>
-      '通过添加阶段创建自定义泵奶流程。每个阶段可以是刺激（快速节奏）或吸乳（较慢节奏）。';
+      '通过添加阶段创建自定义泵奶流程。每个阶段可以是刺激（快速节奏）或吸乳（较慢节奏）。各阶段时长总和不能超过 30 分钟。';
+
+  @override
+  String get customFlowTotalExceeded => '各阶段总时长不能超过 30 分钟。';
 
   @override
   String get mode => '模式';

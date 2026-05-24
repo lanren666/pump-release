@@ -16,9 +16,13 @@
   "@customFlow": {
     "description": "Title for custom flow page"
   },
-  "customFlowInstruction": "Create a custom pumping session by adding phases. Each phase can be either stimulation (fast rhythm) or expression (slower rhythm).",
+  "customFlowInstruction": "Create a custom pumping session by adding phases. Each phase can be either stimulation (fast rhythm) or expression (slower rhythm). Total duration of all phases cannot exceed 30 minutes.",
   "@customFlowInstruction": {
     "description": "Instruction text for custom flow page"
+  },
+  "customFlowTotalExceeded": "Total duration cannot exceed 30 minutes.",
+  "@customFlowTotalExceeded": {
+    "description": "Error when custom flow total duration exceeds limit"
   },
   "mode": "Mode",
   "@mode": {

@@ -40,6 +40,8 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
   static const String _settingKey = 'custom_flow_phases';
   static const int _maxPhases = 4;
   static const int _minPhases = 2;
+  static const int _minPhaseDuration = 1;
+  static const int _maxTotalMinutes = 30;
 
   String _getSettingDesc(BuildContext context) {
     return AppLocalizations.of(context)!.customFlowSettingDesc;
@@ -55,11 +57,56 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
     _loadPhases();
   }
 
+  int get _totalMinutes =>
+      _phases.fold(0, (sum, phase) => sum + phase.duration);
+
+  /// 除 [index] 外其它阶段时长之和。
+  int _otherPhasesTotal(int index) =>
+      _totalMinutes - _phases[index].duration;
+
+  /// 当前阶段在总时长上限内的最大可选分钟数。
+  int _maxDurationForPhase(int index) {
+    final remaining = _maxTotalMinutes - _otherPhasesTotal(index);
+    return remaining.clamp(_minPhaseDuration, _maxTotalMinutes);
+  }
+
+  /// 将各阶段时长收敛到总时长 ≤ 30 分钟（加载旧数据或联动调节后使用）。
+  void _ensureTotalWithinLimit() {
+    while (_totalMinutes > _maxTotalMinutes) {
+      var reduced = false;
+      for (int i = _phases.length - 1; i >= 0; i--) {
+        if (_phases[i].duration > _minPhaseDuration) {
+          _phases[i].duration--;
+          reduced = true;
+          break;
+        }
+      }
+      if (!reduced) break;
+    }
+    for (int i = 0; i < _phases.length; i++) {
+      final maxForPhase = _maxDurationForPhase(i);
+      if (_phases[i].duration > maxForPhase) {
+        _phases[i].duration = maxForPhase;
+      }
+    }
+  }
+
+  void _setPhaseDuration(int index, int minutes) {
+    final maxForPhase = _maxDurationForPhase(index);
+    _phases[index].duration = minutes.clamp(_minPhaseDuration, maxForPhase);
+    _ensureTotalWithinLimit();
+  }
+
   Future<void> _loadPhases() async {
     final setting = await _dbService.getSettingByKey(_settingKey);
     if (setting != null) {
       final List<dynamic> jsonList = jsonDecode(setting.value);
       _phases = jsonList.map((e) => Phase.fromJson(e)).toList();
+      final totalBefore = _totalMinutes;
+      _ensureTotalWithinLimit();
+      if (totalBefore != _totalMinutes) {
+        await _savePhases();
+      }
     } else {
       // 首次使用时的默认值
       _phases = [
@@ -460,16 +507,26 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
                   tickMarkRadius: 0,
                 ),
               ),
-              child: Slider(
-                value: phase.duration.toDouble(),
-                min: 1,
-                max: 30,
-                divisions: 29,
-                onChanged: (double value) {
-                  final roundedValue = value.roundToDouble();
-                  setState(() {
-                    _phases[index].duration = roundedValue.toInt();
-                  });
+              child: Builder(
+                builder: (context) {
+                  final maxForPhase = _maxDurationForPhase(index);
+                  final minForPhase = _minPhaseDuration.toDouble();
+                  final span = maxForPhase - _minPhaseDuration;
+                  return Slider(
+                    value: phase.duration
+                        .clamp(_minPhaseDuration, maxForPhase)
+                        .toDouble(),
+                    min: minForPhase,
+                    max: maxForPhase.toDouble(),
+                    divisions: span > 0 ? span : null,
+                    onChanged: span > 0
+                        ? (double value) {
+                            setState(() {
+                              _setPhaseDuration(index, value.round());
+                            });
+                          }
+                        : null,
+                  );
                 },
               ),
             ),
@@ -499,7 +556,8 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
   }
 
   Widget _buildAddPhaseButton() {
-    final canAdd = _phases.length < _maxPhases;
+    final canAdd =
+        _phases.length < _maxPhases && _totalMinutes < _maxTotalMinutes;
     final borderColor = canAdd ? AppColor.primaryPurple : Colors.grey;
     final textColor = canAdd ? AppColor.primaryPurple : Colors.grey;
 
@@ -512,8 +570,12 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
           onTap: canAdd
               ? () {
                   setState(() {
+                    final remaining = _maxTotalMinutes - _totalMinutes;
                     _phases.add(
-                      Phase(mode: PhaseMode.stimulation, duration: 2),
+                      Phase(
+                        mode: PhaseMode.stimulation,
+                        duration: remaining.clamp(_minPhaseDuration, 2),
+                      ),
                     );
                   });
                 }
@@ -552,7 +614,9 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
   }
 
   Widget _buildFlowSummary() {
-    int totalMinutes = _phases.fold(0, (sum, phase) => sum + phase.duration);
+    final totalMinutes = _totalMinutes;
+    final isOverLimit = totalMinutes > _maxTotalMinutes;
+    final isAtMax = totalMinutes == _maxTotalMinutes;
 
     return Container(
       padding: ResponsiveText.padding(context, all: 16),
@@ -594,9 +658,24 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
             style: ResponsiveText.smallTitle(
               context,
               fontWeight: FontWeight.w500,
-              color: AppColor.textPrimary,
+              color: isOverLimit
+                  ? Colors.red
+                  : (isAtMax ? Colors.orange[800] : AppColor.textPrimary),
             ),
           ),
+          if (isOverLimit)
+            Padding(
+              padding: EdgeInsets.only(
+                top: ResponsiveText.getSize(context, 4),
+              ),
+              child: Text(
+                AppLocalizations.of(context)!.customFlowTotalExceeded,
+                style: ResponsiveText.bodySmall(
+                  context,
+                  color: Colors.red,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -606,10 +685,23 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
-        onPressed: () async {
-          await _savePhases();
-          if (mounted) Navigator.of(context).pop(true);
-        },
+        onPressed: _totalMinutes > _maxTotalMinutes
+            ? null
+            : () async {
+                if (_totalMinutes > _maxTotalMinutes) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        AppLocalizations.of(context)!.customFlowTotalExceeded,
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                await _savePhases();
+                if (mounted) Navigator.of(context).pop(true);
+              },
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColor.primaryPurple,
           foregroundColor: AppColor.white,
