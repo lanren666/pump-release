@@ -97,6 +97,8 @@
   "defaultMode": "默认",
   "custom": "自定义",
   "defaultFlow": "默认流程",
+  "beginnerFlow": "新手模式",
+  "boostMilkFlow": "追奶模式",
   "customFlow": "自定义流程",
   "max": "最大：",
   "phase": "阶段",

@@ -21,7 +21,7 @@ import '../config/app_config.dart';
 
 enum PumpSelection { left, both, right }
 
-enum SessionMode { defaultMode, custom }
+enum SessionMode { defaultMode, beginner, boostMilk, custom }
 
 enum IntensityMode { stimulation, expression }
 
@@ -386,7 +386,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         if (AppConfig.tuyaEnabled) {
           final modeDurations = await _getModeDurations();
           final totalPhase = initialState['totalPhase'] as int;
-          final isCustom = _sessionMode == SessionMode.custom;
+          final isCustom = _sessionMode != SessionMode.defaultMode;
           if (isLeftDevice && _leftDevice != null) {
             await BleDpService.pushSessionSetting(
               _leftDevice!.bluetoothId,
@@ -469,7 +469,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         if (AppConfig.tuyaEnabled) {
           final modeDurations = await _getModeDurations();
           final totalPhase = initialState['totalPhase'] as int;
-          final isCustom = _sessionMode == SessionMode.custom;
+          final isCustom = _sessionMode != SessionMode.defaultMode;
           if (isLeftDevice && _leftDevice != null) {
             await BleDpService.pushSessionSetting(
               _leftDevice!.bluetoothId,
@@ -1220,78 +1220,127 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   }
 
   Future<IntensityMode?> _getFirstPhaseIntensityMode() async {
-    if (_sessionMode == SessionMode.custom) {
-      final setting = await _dbService.getSettingByKey('custom_flow_phases');
-      if (setting != null) {
-        final List<dynamic> jsonList = jsonDecode(setting.value);
-        if (jsonList.isNotEmpty) {
-          final firstPhase = jsonList[0];
-          final mode = firstPhase['mode'];
-          return mode == 'stimulation'
-              ? IntensityMode.stimulation
-              : IntensityMode.expression;
+    switch (_sessionMode) {
+      case SessionMode.beginner:
+      case SessionMode.boostMilk:
+        return IntensityMode.stimulation;
+      case SessionMode.custom:
+        final setting = await _dbService.getSettingByKey('custom_flow_phases');
+        if (setting != null) {
+          final List<dynamic> jsonList = jsonDecode(setting.value);
+          if (jsonList.isNotEmpty) {
+            final mode = jsonList[0]['mode'];
+            return mode == 'stimulation'
+                ? IntensityMode.stimulation
+                : IntensityMode.expression;
+          }
         }
-      }
+        return null;
+      case SessionMode.defaultMode:
+        return null;
     }
-    return null;
   }
 
   Future<int> _getTotalPhases() async {
-    if (_sessionMode == SessionMode.custom) {
-      final setting = await _dbService.getSettingByKey('custom_flow_phases');
-      if (setting != null) {
-        final List<dynamic> jsonList = jsonDecode(setting.value);
-        return jsonList.length;
-      }
+    switch (_sessionMode) {
+      case SessionMode.beginner:
+      case SessionMode.boostMilk:
+        return 2;
+      case SessionMode.custom:
+        final setting = await _dbService.getSettingByKey('custom_flow_phases');
+        if (setting != null) {
+          final List<dynamic> jsonList = jsonDecode(setting.value);
+          return jsonList.length;
+        }
+        return 2;
+      case SessionMode.defaultMode:
+        return 2;
     }
-    return 2;
   }
 
   Future<List<Map<String, int>>> _getModeDurations() async {
-    if (_sessionMode == SessionMode.custom) {
-      final setting = await _dbService.getSettingByKey('custom_flow_phases');
-      if (setting != null) {
-        final List<dynamic> jsonList = jsonDecode(setting.value);
-        return jsonList.map<Map<String, int>>((e) {
-          return {e['mode']: e['duration'] as int};
-        }).toList();
-      }
+    switch (_sessionMode) {
+      case SessionMode.beginner:
+        return [
+          {'stimulation': 2},
+          {'expression': 5},
+        ];
+      case SessionMode.boostMilk:
+        return [
+          {'stimulation': 2},
+          {'expression': 3},
+        ];
+      case SessionMode.custom:
+        final setting = await _dbService.getSettingByKey('custom_flow_phases');
+        if (setting != null) {
+          final List<dynamic> jsonList = jsonDecode(setting.value);
+          return jsonList.map<Map<String, int>>((e) {
+            return {e['mode']: e['duration'] as int};
+          }).toList();
+        }
+        return [
+          {'stimulation': 2},
+          {'expression': 15},
+        ];
+      case SessionMode.defaultMode:
+        return [
+          {'stimulation': 2},
+          {'expression': 15},
+        ];
     }
-    return [
-      {'stimulation': 2},
-      {'expression': 15},
-    ];
   }
 
   Future<Map<String, dynamic>> _getInitialDeviceState(bool isLeft) async {
-    if (_sessionMode == SessionMode.custom) {
-      // Custom mode：从数据库拿初始值
-      final setting = await _dbService.getSettingByKey('custom_flow_phases');
-      if (setting != null) {
-        final List<dynamic> jsonList = jsonDecode(setting.value);
-        if (jsonList.isNotEmpty) {
-          final firstPhase = jsonList[0];
-          final mode = firstPhase['mode'] as String;
-          final duration = firstPhase['duration'] as int;
-          final totalPhases = jsonList.length;
+    Map<String, dynamic>? result;
 
-          final intensityMode = mode == 'stimulation'
-              ? IntensityMode.stimulation
-              : IntensityMode.expression;
-
-          return {
-            'elapsedTime': Duration.zero,
-            'elapsedTimeInPhase': Duration.zero,
-            'currentPhase': 1,
-            'totalPhase': totalPhases,
-            'phaseDuration': Duration(minutes: duration),
-            'intensityMode': intensityMode,
-          };
+    switch (_sessionMode) {
+      case SessionMode.beginner:
+        result = {
+          'elapsedTime': Duration.zero,
+          'elapsedTimeInPhase': Duration.zero,
+          'currentPhase': 1,
+          'totalPhase': 2,
+          'phaseDuration': const Duration(minutes: 2),
+          'intensityMode': IntensityMode.stimulation,
+        };
+        break;
+      case SessionMode.boostMilk:
+        result = {
+          'elapsedTime': Duration.zero,
+          'elapsedTimeInPhase': Duration.zero,
+          'currentPhase': 1,
+          'totalPhase': 2,
+          'phaseDuration': const Duration(minutes: 2),
+          'intensityMode': IntensityMode.stimulation,
+        };
+        break;
+      case SessionMode.custom:
+        final setting = await _dbService.getSettingByKey('custom_flow_phases');
+        if (setting != null) {
+          final List<dynamic> jsonList = jsonDecode(setting.value);
+          if (jsonList.isNotEmpty) {
+            final firstPhase = jsonList[0];
+            final mode = firstPhase['mode'] as String;
+            final duration = firstPhase['duration'] as int;
+            final totalPhases = jsonList.length;
+            result = {
+              'elapsedTime': Duration.zero,
+              'elapsedTimeInPhase': Duration.zero,
+              'currentPhase': 1,
+              'totalPhase': totalPhases,
+              'phaseDuration': Duration(minutes: duration),
+              'intensityMode': mode == 'stimulation'
+                  ? IntensityMode.stimulation
+                  : IntensityMode.expression,
+            };
+          }
         }
-      }
+        break;
+      case SessionMode.defaultMode:
+        break;
     }
 
-    return {
+    return result ?? {
       'elapsedTime': Duration.zero,
       'elapsedTimeInPhase': Duration.zero,
       'currentPhase': 1,
@@ -2295,6 +2344,34 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     );
   }
 
+  /// 返回当前模式的阶段描述摘要（展示在流程设置区域）
+  String _currentModeDescription() {
+    switch (_sessionMode) {
+      case SessionMode.defaultMode:
+        return '2min -> 15min';
+      case SessionMode.beginner:
+        return '2min -> 5min';
+      case SessionMode.boostMilk:
+        return '2min -> 3min';
+      case SessionMode.custom:
+        return _customFlowDescription;
+    }
+  }
+
+  /// 返回当前模式对应的按钮标签
+  String _sessionModeFlowLabel(SessionMode mode, AppLocalizations l10n) {
+    switch (mode) {
+      case SessionMode.defaultMode:
+        return l10n.defaultFlow;
+      case SessionMode.beginner:
+        return l10n.beginnerFlow;
+      case SessionMode.boostMilk:
+        return l10n.boostMilkFlow;
+      case SessionMode.custom:
+        return l10n.customFlow;
+    }
+  }
+
   Widget _buildSessionSettings() {
     return Container(
       padding: ResponsiveText.padding(
@@ -2320,20 +2397,42 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             ),
           ),
           SizedBox(height: ResponsiveText.getSize(context, 30)),
-          Row(
+          Column(
             children: [
-              Expanded(
-                child: _buildSessionModeButton(
-                  AppLocalizations.of(context)!.defaultMode,
-                  SessionMode.defaultMode,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildSessionModeButton(
+                      AppLocalizations.of(context)!.defaultMode,
+                      SessionMode.defaultMode,
+                    ),
+                  ),
+                  SizedBox(width: ResponsiveText.getSize(context, 8)),
+                  Expanded(
+                    child: _buildSessionModeButton(
+                      AppLocalizations.of(context)!.defaultMode,
+                      SessionMode.beginner,
+                    ),
+                  ),
+                ],
               ),
-              SizedBox(width: ResponsiveText.getSize(context, 12)),
-              Expanded(
-                child: _buildSessionModeButton(
-                  AppLocalizations.of(context)!.custom,
-                  SessionMode.custom,
-                ),
+              SizedBox(height: ResponsiveText.getSize(context, 8)),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildSessionModeButton(
+                      AppLocalizations.of(context)!.defaultMode,
+                      SessionMode.boostMilk,
+                    ),
+                  ),
+                  SizedBox(width: ResponsiveText.getSize(context, 8)),
+                  Expanded(
+                    child: _buildSessionModeButton(
+                      AppLocalizations.of(context)!.custom,
+                      SessionMode.custom,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -2342,9 +2441,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                _sessionMode == SessionMode.defaultMode
-                    ? '2min -> 15min'
-                    : _customFlowDescription,
+                _currentModeDescription(),
                 style: ResponsiveText.bodySmall(
                   context,
                   color: AppColor.textSecondary,
@@ -2465,9 +2562,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              label == AppLocalizations.of(context)!.defaultMode
-                  ? AppLocalizations.of(context)!.defaultFlow
-                  : AppLocalizations.of(context)!.customFlow,
+              _sessionModeFlowLabel(mode, AppLocalizations.of(context)!),
               textAlign: TextAlign.center,
               style: ResponsiveText.body(
                 context,
@@ -3530,7 +3625,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                           if (AppConfig.tuyaEnabled &&
                               modeDurations != null &&
                               totalPhase != null) {
-                            final isCustom = _sessionMode == SessionMode.custom;
+                            final isCustom = _sessionMode != SessionMode.defaultMode;
 
                             if (_selectedPump == PumpSelection.left &&
                                 _leftDevice != null) {

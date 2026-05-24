@@ -199,6 +199,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get defaultFlow => 'Default Flow';
 
   @override
+  String get beginnerFlow => 'Beginner';
+
+  @override
+  String get boostMilkFlow => 'Boost Milk';
+
+  @override
   String get max => 'Max:';
 
   @override

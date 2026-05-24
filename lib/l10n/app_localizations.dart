@@ -434,6 +434,18 @@ abstract class AppLocalizations {
   /// **'Default Flow'**
   String get defaultFlow;
 
+  /// Beginner mode button text
+  ///
+  /// In en, this message translates to:
+  /// **'Beginner'**
+  String get beginnerFlow;
+
+  /// Boost milk mode button text
+  ///
+  /// In en, this message translates to:
+  /// **'Boost Milk'**
+  String get boostMilkFlow;
+
   /// Maximum label
   ///
   /// In en, this message translates to:

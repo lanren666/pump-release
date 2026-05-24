@@ -255,6 +255,14 @@
   "@defaultFlow": {
     "description": "Default flow button text"
   },
+  "beginnerFlow": "Beginner",
+  "@beginnerFlow": {
+    "description": "Beginner mode button text"
+  },
+  "boostMilkFlow": "Boost Milk",
+  "@boostMilkFlow": {
+    "description": "Boost milk mode button text"
+  },
   "customFlow": "Custom Flow",
   "@customFlow": {
     "description": "Custom flow button text"

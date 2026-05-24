@@ -188,6 +188,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get defaultFlow => '默认流程';
 
   @override
+  String get beginnerFlow => '新手模式';
+
+  @override
+  String get boostMilkFlow => '追奶模式';
+
+  @override
   String get max => '最大：';
 
   @override
