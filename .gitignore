@@ -27,6 +27,11 @@ migrate_working_dir/
 .env
 .env.*
 
+# Android release signing (do not commit)
+**/key.properties
+**/*.keystore
+**/*.jks
+
 # Test coverage
 coverage/
 
