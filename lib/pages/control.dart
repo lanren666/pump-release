@@ -386,7 +386,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         if (AppConfig.tuyaEnabled) {
           final modeDurations = await _getModeDurations();
           final totalPhase = initialState['totalPhase'] as int;
-          final isCustom = _sessionMode != SessionMode.defaultMode;
+          const isCustom = true;
           if (isLeftDevice && _leftDevice != null) {
             await BleDpService.pushSessionSetting(
               _leftDevice!.bluetoothId,
@@ -469,7 +469,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         if (AppConfig.tuyaEnabled) {
           final modeDurations = await _getModeDurations();
           final totalPhase = initialState['totalPhase'] as int;
-          final isCustom = _sessionMode != SessionMode.defaultMode;
+          const isCustom = true;
           if (isLeftDevice && _leftDevice != null) {
             await BleDpService.pushSessionSetting(
               _leftDevice!.bluetoothId,
@@ -1285,7 +1285,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       case SessionMode.defaultMode:
         return [
           {'stimulation': 2},
-          {'expression': 15},
+          {'expression': 5},
         ];
     }
   }
@@ -2348,7 +2348,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   String _currentModeDescription() {
     switch (_sessionMode) {
       case SessionMode.defaultMode:
-        return '2min -> 15min';
+        return '2min -> 5min';
       case SessionMode.beginner:
         return '2min -> 5min';
       case SessionMode.boostMilk:
@@ -3625,7 +3625,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                           if (AppConfig.tuyaEnabled &&
                               modeDurations != null &&
                               totalPhase != null) {
-                            final isCustom = _sessionMode != SessionMode.defaultMode;
+                            const isCustom = true;
 
                             if (_selectedPump == PumpSelection.left &&
                                 _leftDevice != null) {
