@@ -145,6 +145,7 @@
   "exportLogsFailed": "导出失败，请重试。",
   "lowBatteryTitle": "电量不足",
   "lowBatteryConnectMessage": "电量不足以完成一次完整吸乳（剩余不足 20 分钟）。请先充电后再使用。",
+  "lowBatteryRunningMessage": "电量剩余不足 20 分钟，请尽快充电。",
   "lowBatterySessionCompleteMessage": "本次吸乳已完成！电量不足以支持下次使用，请立即充电。",
   "lowBatteryGoCharge": "知道了，去充电",
   "lowBatteryContinue": "暂不充电，继续使用",

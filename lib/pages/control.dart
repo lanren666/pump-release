@@ -137,6 +137,9 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   /// Prevents duplicate session-complete low-battery dialogs per device per session.
   final Set<String> _sessionCompleteLowBatteryShown = {};
 
+  /// Prevents duplicate in-session low-battery dialogs per device per session.
+  final Set<String> _sessionRunningLowBatteryShown = {};
+
   // 用于防止设备返回的旧状态覆盖用户操作
   // 记录用户最近的操作：设备ID -> (期望值, 操作时间)
   final Map<String, Map<String, _UserOperation>> _recentUserOperations = {};
@@ -751,7 +754,63 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   void _clearSessionLowBatteryPromptFlag(String? bluetoothId) {
     if (bluetoothId != null) {
       _sessionCompleteLowBatteryShown.remove(bluetoothId);
+      _sessionRunningLowBatteryShown.remove(bluetoothId);
     }
+  }
+
+  void _handleBatteryLevelUpdate(DpParamUpdate update) {
+    final isLeftDevice = _leftDevice?.devId == update.deviceId;
+    final isRightDevice = _rightDevice?.devId == update.deviceId;
+    if (!isLeftDevice && !isRightDevice) return;
+
+    final isLeft = update.position == 'left' || isLeftDevice;
+    final device = isLeft ? _leftDevice : _rightDevice;
+    if (device == null) return;
+
+    final newBattery = (update.value as num).toInt();
+    final previousBattery = device.battery;
+
+    if (!mounted) return;
+    setState(() {
+      if (isLeft) {
+        _leftDevice = device.copyWith(battery: newBattery);
+      } else {
+        _rightDevice = device.copyWith(battery: newBattery);
+      }
+    });
+
+    _maybePromptLowBatteryDuringSession(
+      bluetoothId: device.bluetoothId,
+      hasStarted: isLeft ? _leftHasStarted : _rightHasStarted,
+      previousBattery: previousBattery,
+      newBattery: newBattery,
+    );
+  }
+
+  void _maybePromptLowBatteryDuringSession({
+    required String bluetoothId,
+    required bool hasStarted,
+    required int previousBattery,
+    required int newBattery,
+  }) {
+    if (!hasStarted) return;
+    if (!BatteryAlertLogic.isLowBatteryTransition(
+      previousBattery: previousBattery,
+      newBattery: newBattery,
+    )) {
+      return;
+    }
+    if (_sessionRunningLowBatteryShown.contains(bluetoothId)) return;
+
+    _sessionRunningLowBatteryShown.add(bluetoothId);
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      LowBatteryDialog.show(
+        context,
+        LowBatteryDialogVariant.runningWarning,
+      );
+    });
   }
 
   // Future<void> _fetchDeviceConfigs(
@@ -884,6 +943,11 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   // }
 
   void _handleDpParamUpdate(DpParamUpdate update) {
+    if (update.dpId == DpConstants.batteryLevel) {
+      _handleBatteryLevelUpdate(update);
+      return;
+    }
+
     final isLeftDevice = _leftDevice?.devId == update.deviceId;
     final isRightDevice = _rightDevice?.devId == update.deviceId;
     if (!isLeftDevice && !isRightDevice) return;
@@ -2550,6 +2614,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     );
   }
 
+  /// Static red icon at level 1 — no blink animation (host LED blinks instead).
   Widget _buildBatteryIndicator(int level) {
     final batteryData = switch (level) {
       1 => (Icons.battery_2_bar, Colors.red),

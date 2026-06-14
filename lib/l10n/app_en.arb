@@ -447,6 +447,10 @@
   "@lowBatteryConnectMessage": {
     "description": "Low battery warning when connecting with insufficient charge"
   },
+  "lowBatteryRunningMessage": "Battery is low (<20 mins left). Please charge soon.",
+  "@lowBatteryRunningMessage": {
+    "description": "Low battery warning during an active session when host red LED blinks"
+  },
   "lowBatterySessionCompleteMessage": "Great job on your session! Battery is insufficient for your next use. Please charge now.",
   "@lowBatterySessionCompleteMessage": {
     "description": "Low battery prompt after session completes"

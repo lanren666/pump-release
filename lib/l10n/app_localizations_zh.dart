@@ -329,6 +329,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get lowBatteryConnectMessage => '电量不足以完成一次完整吸乳（剩余不足 20 分钟）。请先充电后再使用。';
 
   @override
+  String get lowBatteryRunningMessage => '电量剩余不足 20 分钟，请尽快充电。';
+
+  @override
   String get lowBatterySessionCompleteMessage => '本次吸乳已完成！电量不足以支持下次使用，请立即充电。';
 
   @override

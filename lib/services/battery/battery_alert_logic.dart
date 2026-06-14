@@ -4,8 +4,16 @@ import '../../config/app_config.dart';
 class BatteryAlertLogic {
   BatteryAlertLogic._();
 
-  /// DP 104 level 1 = device red LED / critically low.
+  /// DP 104 level 1 = device red LED blink / critically low (<20 min).
   static bool isLowBatteryLevel(int battery) => battery == 1;
+
+  /// Host red LED starts blinking when battery crosses into level 1.
+  static bool isLowBatteryTransition({
+    required int previousBattery,
+    required int newBattery,
+  }) {
+    return !isLowBatteryLevel(previousBattery) && isLowBatteryLevel(newBattery);
+  }
 
   /// Bat_Volt below threshold → less than a full session (~20 min placeholder).
   static bool isBatVoltInsufficientForFullSession(int? batVolt) {

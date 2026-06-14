@@ -8,6 +8,9 @@ enum LowBatteryDialogVariant {
   /// Before use: insufficient for a full session.
   connectWarning,
 
+  /// During session: host red LED blink (<20 min left).
+  runningWarning,
+
   /// After session: need to charge for next use.
   sessionComplete,
 }
@@ -32,9 +35,12 @@ class LowBatteryDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final message = variant == LowBatteryDialogVariant.connectWarning
-        ? l10n.lowBatteryConnectMessage
-        : l10n.lowBatterySessionCompleteMessage;
+    final message = switch (variant) {
+      LowBatteryDialogVariant.connectWarning => l10n.lowBatteryConnectMessage,
+      LowBatteryDialogVariant.runningWarning => l10n.lowBatteryRunningMessage,
+      LowBatteryDialogVariant.sessionComplete =>
+        l10n.lowBatterySessionCompleteMessage,
+    };
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

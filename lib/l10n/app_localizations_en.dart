@@ -347,6 +347,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Low battery for a full session (<20 mins left). Please charge before use.';
 
   @override
+  String get lowBatteryRunningMessage =>
+      'Battery is low (<20 mins left). Please charge soon.';
+
+  @override
   String get lowBatterySessionCompleteMessage =>
       'Great job on your session! Battery is insufficient for your next use. Please charge now.';
 

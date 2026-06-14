@@ -42,4 +42,20 @@ void main() {
     expect(find.text('Got it'), findsOneWidget);
     expect(find.text('Continue without charging'), findsNothing);
   });
+
+  testWidgets('running warning shows in-session message and Got it', (tester) async {
+    await tester.pumpWidget(
+      _wrap(const LowBatteryDialog(
+        variant: LowBatteryDialogVariant.runningWarning,
+      )),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Battery is low (<20 mins left). Please charge soon.'),
+      findsOneWidget,
+    );
+    expect(find.text('Got it'), findsOneWidget);
+    expect(find.text('Continue without charging'), findsNothing);
+  });
 }

@@ -69,5 +69,29 @@ void main() {
         isFalse,
       );
     });
+
+    test('low battery transition when host red LED starts blinking', () {
+      expect(
+        BatteryAlertLogic.isLowBatteryTransition(
+          previousBattery: 2,
+          newBattery: 1,
+        ),
+        isTrue,
+      );
+      expect(
+        BatteryAlertLogic.isLowBatteryTransition(
+          previousBattery: 1,
+          newBattery: 1,
+        ),
+        isFalse,
+      );
+      expect(
+        BatteryAlertLogic.isLowBatteryTransition(
+          previousBattery: 3,
+          newBattery: 2,
+        ),
+        isFalse,
+      );
+    });
   });
 }

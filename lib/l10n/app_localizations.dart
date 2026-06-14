@@ -716,6 +716,12 @@ abstract class AppLocalizations {
   /// **'Low battery for a full session (<20 mins left). Please charge before use.'**
   String get lowBatteryConnectMessage;
 
+  /// Low battery warning during an active session when host red LED blinks
+  ///
+  /// In en, this message translates to:
+  /// **'Battery is low (<20 mins left). Please charge soon.'**
+  String get lowBatteryRunningMessage;
+
   /// Low battery prompt after session completes
   ///
   /// In en, this message translates to:
