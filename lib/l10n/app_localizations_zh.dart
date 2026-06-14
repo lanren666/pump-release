@@ -179,6 +179,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get disconnected => '未连接';
 
   @override
+  String get deviceOff => '关闭';
+
+  @override
+  String get deviceConnected => '已连接';
+
+  @override
+  String get tapToReconnect => '点击重新连接';
+
+  @override
+  String get reconnectFailed => '重连失败，请重试';
+
+  @override
   String get sessionSettings => '流程设置';
 
   @override

@@ -125,7 +125,7 @@ abstract class AppLocalizations {
   /// Instruction text for custom flow page
   ///
   /// In en, this message translates to:
-  /// **'Create a custom pumping session by adding phases. Each phase can be either stimulation (fast rhythm) or expression (slower rhythm).'**
+  /// **'Create a custom pumping session by adding phases. Each phase can be either stimulation (fast rhythm) or expression (slower rhythm). Total duration of all phases cannot exceed 30 minutes.'**
   String get customFlowInstruction;
 
   /// Error when custom flow total duration exceeds limit
@@ -415,6 +415,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'disconnected'**
   String get disconnected;
+
+  /// Device off/disconnected status label in status card
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get deviceOff;
+
+  /// Device connected status label in status card
+  ///
+  /// In en, this message translates to:
+  /// **'Connected'**
+  String get deviceConnected;
+
+  /// Hint on disconnected device status card
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to reconnect'**
+  String get tapToReconnect;
+
+  /// Snackbar when manual reconnect fails
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnect failed. Please try again.'**
+  String get reconnectFailed;
 
   /// Session settings section title
   ///

@@ -191,6 +191,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get disconnected => 'disconnected';
 
   @override
+  String get deviceOff => 'Off';
+
+  @override
+  String get deviceConnected => 'Connected';
+
+  @override
+  String get tapToReconnect => 'Tap to reconnect';
+
+  @override
+  String get reconnectFailed => 'Reconnect failed. Please try again.';
+
+  @override
   String get sessionSettings => 'Session Settings';
 
   @override

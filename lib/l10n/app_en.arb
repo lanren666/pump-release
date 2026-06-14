@@ -243,6 +243,22 @@
   "@disconnected": {
     "description": "Device disconnected status"
   },
+  "deviceOff": "Off",
+  "@deviceOff": {
+    "description": "Device off/disconnected status label in status card"
+  },
+  "deviceConnected": "Connected",
+  "@deviceConnected": {
+    "description": "Device connected status label in status card"
+  },
+  "tapToReconnect": "Tap to reconnect",
+  "@tapToReconnect": {
+    "description": "Hint on disconnected device status card"
+  },
+  "reconnectFailed": "Reconnect failed. Please try again.",
+  "@reconnectFailed": {
+    "description": "Snackbar when manual reconnect fails"
+  },
   "sessionSettings": "Session Settings",
   "@sessionSettings": {
     "description": "Session settings section title"

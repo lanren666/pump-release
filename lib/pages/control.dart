@@ -18,12 +18,10 @@ import '../services/tuya/ble_dp_service.dart';
 import '../services/tuya/ble_types.dart';
 import '../services/tuya/dp_change_handle.dart';
 import '../config/app_config.dart';
-
-enum PumpSelection { left, both, right }
-
-enum SessionMode { defaultMode, beginner, boostMilk, custom }
-
-enum IntensityMode { stimulation, expression }
+import '../config/ble_channels.dart';
+import 'control_timer_display_logic.dart';
+import 'control_types.dart';
+import 'widgets/unified_timer_card.dart';
 
 // 记录待确认的操作，用来处理容错
 class _PendingOperation {
@@ -128,6 +126,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   StreamSubscription<SessionStatusUpdate>? _sessionStatusSubscription;
   StreamSubscription<DpParamUpdate>? _dpParamSubscription;
   Timer? _refreshTimer;
+  final Set<String> _reconnectingDeviceIds = {};
   final Map<String, _PendingOperation> _pendingOperations = {};
   final Map<String, Timer> _pendingCheckTimers = {};
   static const int _toleranceDelayMs = 2500;
@@ -1102,6 +1101,107 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _publishDeviceSymbolThrice(
+    String bluetoothId,
+    String position,
+  ) async {
+    for (int i = 0; i < 3; i++) {
+      await BleDpService.publishDp(
+        bluetoothId,
+        DpConstants.deviceSymbol,
+        position,
+      );
+      if (i < 2) {
+        await Future.delayed(const Duration(seconds: 1));
+      }
+    }
+  }
+
+  Future<void> _updateDeviceConnectionStatus(
+    ConnectedDevice device,
+    bool isRunning,
+  ) async {
+    if (!device.isRemembered) return;
+
+    final updatedDevice = device.copyWith(isRunning: isRunning);
+    await _dbService.updateDevice(updatedDevice);
+
+    if (isRunning) {
+      unawaited(_publishDeviceSymbolThrice(device.bluetoothId, device.position));
+    }
+
+    if (!mounted) return;
+    setState(() {
+      if (device.position == 'left') {
+        _leftDevice = updatedDevice;
+      } else {
+        _rightDevice = updatedDevice;
+      }
+    });
+  }
+
+  Future<void> _reconnectDevice(ConnectedDevice device) async {
+    if (!AppConfig.tuyaEnabled) return;
+    if (_reconnectingDeviceIds.contains(device.bluetoothId)) return;
+
+    setState(() {
+      _reconnectingDeviceIds.add(device.bluetoothId);
+    });
+
+    var connected = false;
+    try {
+      final isOnline =
+          await connectionChannel.invokeMethod('isDeviceOnline', {
+                'deviceId': device.bluetoothId,
+              })
+              as bool? ??
+          false;
+
+      if (isOnline) {
+        connected = true;
+      } else {
+        final connectionResults =
+            await connectionChannel.invokeMethod('connectBleDevices', {
+                  'deviceIds': [device.bluetoothId],
+                })
+                as Map<dynamic, dynamic>?;
+
+        connected =
+            connectionResults?[device.bluetoothId] as bool? ?? false;
+      }
+
+      if (connected) {
+        await _updateDeviceConnectionStatus(device, true);
+        try {
+          await connectionChannel.invokeMethod('registerDeviceListener', {
+            'deviceId': device.bluetoothId,
+          });
+        } catch (e) {
+          debugPrint('注册设备监听器失败: $e');
+        }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context)!.reconnectFailed)),
+        );
+      }
+    } catch (e) {
+      debugPrint('手动重连失败: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context)!.reconnectFailed)),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _reconnectingDeviceIds.remove(device.bluetoothId);
+        });
+      } else {
+        _reconnectingDeviceIds.remove(device.bluetoothId);
+      }
+    }
+  }
+
   /// 从数据库加载吸力级别配置；若不存在则用默认值 3 并写入数据库
   Future<void> _loadSuctionLevelSettings() async {
     const defaultLevel = 1.0;
@@ -1780,7 +1880,33 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   /// both 模式下且未进入独立模式时，统一用左侧时间展示，
   /// 避免左右设备轻微时差导致计时显示抖动。
   bool _shouldShowBothUsingLeft() {
-    return _selectedPump == PumpSelection.both && !_isIndividualMode;
+    return ControlTimerDisplayLogic.useBothUnifiedRules(
+      isBothSelected: _selectedPump == PumpSelection.both,
+      isIndividualMode: _isIndividualMode,
+    );
+  }
+
+  bool _bothRunningTogether() {
+    return ControlTimerDisplayLogic.bothRunningTogether(
+      leftHasStarted: _leftHasStarted,
+      rightHasStarted: _rightHasStarted,
+    );
+  }
+
+  bool _getTimerDisplayHasStarted() {
+    return ControlTimerDisplayLogic.timerDisplayHasStarted(
+      useBothUnifiedRules: _shouldShowBothUsingLeft(),
+      leftHasStarted: _leftHasStarted,
+      rightHasStarted: _rightHasStarted,
+      singleSideHasStarted: _getCurrentHasStarted(),
+    );
+  }
+
+  bool _getTimerInitialStateIsLeft() {
+    return ControlTimerDisplayLogic.timerInitialStateUsesLeftDevice(
+      isLeftSelected: _selectedPump == PumpSelection.left,
+      isBothSelected: _selectedPump == PumpSelection.both,
+    );
   }
 
   /// 将主展示时间同步为左侧设备时间（仅在 both 非独立模式生效）。
@@ -1794,7 +1920,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   }
 
   Future<IntensityMode> _getDisplayIntensityMode() async {
-    final hasStarted = _getCurrentHasStarted();
+    final hasStarted = _getTimerDisplayHasStarted();
     if (!hasStarted) {
       final firstPhaseMode = await _getFirstPhaseIntensityMode();
       return firstPhaseMode ?? IntensityMode.stimulation;
@@ -2216,81 +2342,142 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   }
 
   Widget _buildSingleDeviceStatusCard() {
+    final side = _selectedPump == PumpSelection.left ? 'L' : 'R';
     final device = _selectedPump == PumpSelection.left
         ? _leftDevice
         : _rightDevice;
-    Color backgroundColor;
-    Color textColor;
-    bool showBattery = false;
-    int batteryLevel = 0;
-    if (device == null || !device.isRemembered) {
-      backgroundColor = Colors.grey.shade300;
-      textColor = Colors.grey.shade700;
-    } else if (device.isRunning) {
-      backgroundColor = const Color(0xFFE8F5E9);
-      textColor = Colors.green;
-      showBattery = true;
-      batteryLevel = device.battery;
-    } else {
-      backgroundColor = const Color(0xFFFEF3C7);
-      textColor = const Color(0xFFA16207);
-    }
-    final displayText = (device == null || !device.isRemembered)
-        ? AppLocalizations.of(context)!.notAvailable
-        : device.name;
+    return _buildDeviceStatusCard(side, device);
+  }
 
-    return Container(
-      padding: ResponsiveText.symmetric(context, vertical: 8, horizontal: 10),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.3), width: 1),
-      ),
-      child: Row(
-        children: [
-          Text(
-            displayText,
-            style: ResponsiveText.bodySmall(
-              context,
-              fontWeight: FontWeight.bold,
-              color: textColor,
-            ),
+  static const Color _statusConnectedBackground = Color(0xFFFEF9E7);
+  static const Color _statusConnectedText = Color(0xFF8D6E63);
+  static const Color _statusDisconnectedBackground = Color(0xFFFFF0F0);
+  static const Color _statusDisconnectedText = Color(0xFFDC2626);
+
+  Widget _buildDeviceStatusCard(String side, ConnectedDevice? device) {
+    final l10n = AppLocalizations.of(context)!;
+    final sideLabel = side == 'L' ? l10n.left : l10n.right;
+
+    if (device == null || !device.isRemembered) {
+      return _buildStatusCardShell(
+        backgroundColor: Colors.grey.shade300,
+        borderColor: Colors.grey.shade400,
+        child: Text(
+          l10n.notAvailable,
+          style: ResponsiveText.bodySmall(
+            context,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey.shade700,
           ),
-          if (showBattery) ...[
+        ),
+      );
+    }
+
+    if (device.isRunning) {
+      return _buildStatusCardShell(
+        backgroundColor: _statusConnectedBackground,
+        borderColor: const Color.fromRGBO(0, 0, 0, 0.1),
+        child: Row(
+          children: [
+            Text(
+              '$sideLabel: ',
+              style: ResponsiveText.bodySmall(
+                context,
+                fontWeight: FontWeight.bold,
+                color: _statusConnectedText,
+              ),
+            ),
+            Text(
+              l10n.deviceConnected,
+              style: ResponsiveText.bodySmall(
+                context,
+                fontWeight: FontWeight.bold,
+                color: _statusConnectedText,
+              ),
+            ),
             SizedBox(width: ResponsiveText.getSize(context, 8)),
-            _buildBatteryIndicator(batteryLevel),
+            _buildBatteryIndicator(device.battery),
           ],
-        ],
-      ),
+        ),
+      );
+    }
+
+    final isReconnecting = _reconnectingDeviceIds.contains(device.bluetoothId);
+    final card = _buildStatusCardShell(
+      backgroundColor: _statusDisconnectedBackground,
+      borderColor: const Color.fromRGBO(0, 0, 0, 0.08),
+      child: isReconnecting
+          ? Row(
+              children: [
+                SizedBox(
+                  width: ResponsiveText.getSize(context, 14),
+                  height: ResponsiveText.getSize(context, 14),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColor.primaryPurple,
+                  ),
+                ),
+                SizedBox(width: ResponsiveText.getSize(context, 6)),
+                Text(
+                  '$sideLabel: ${l10n.connecting}',
+                  style: ResponsiveText.bodySmall(
+                    context,
+                    fontWeight: FontWeight.bold,
+                    color: AppColor.primaryPurple,
+                  ),
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.bluetooth,
+                      size: ResponsiveText.getSize(context, 16),
+                      color: _statusDisconnectedText,
+                    ),
+                    SizedBox(width: ResponsiveText.getSize(context, 4)),
+                    Text(
+                      '$sideLabel: ${l10n.deviceOff}',
+                      style: ResponsiveText.bodySmall(
+                        context,
+                        fontWeight: FontWeight.bold,
+                        color: _statusDisconnectedText,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: ResponsiveText.getSize(context, 4)),
+                Text(
+                  l10n.tapToReconnect,
+                  style: ResponsiveText.captionSmall(
+                    context,
+                    fontWeight: FontWeight.w500,
+                    color: AppColor.primaryPurple,
+                  ),
+                ),
+              ],
+            ),
+    );
+
+    if (isReconnecting) {
+      return card;
+    }
+
+    return GestureDetector(
+      onTap: () => _reconnectDevice(device),
+      behavior: HitTestBehavior.opaque,
+      child: card,
     );
   }
 
-  Widget _buildDeviceStatusCard(String side, ConnectedDevice? device) {
-    String statusText;
-    Color backgroundColor;
-    Color borderColor;
-    Color textColor;
-    bool showBattery = false;
-    int batteryLevel = 0;
-    if (device == null || !device.isRemembered) {
-      statusText = AppLocalizations.of(context)!.notAvailable;
-      backgroundColor = Colors.grey.shade300;
-      borderColor = Colors.grey.shade400;
-      textColor = Colors.grey.shade700;
-    } else if (device.isRunning) {
-      statusText = AppLocalizations.of(context)!.connected;
-      backgroundColor = const Color(0xFFE8F5E9);
-      borderColor = const Color(0xFFC8E6C9);
-      textColor = Colors.green;
-      showBattery = true;
-      batteryLevel = device.battery;
-    } else {
-      statusText = AppLocalizations.of(context)!.disconnected;
-      backgroundColor = const Color(0xFFFEF3C7);
-      borderColor = const Color.fromRGBO(0, 0, 0, 0.1);
-      textColor = const Color(0xFFA16207);
-    }
-
+  Widget _buildStatusCardShell({
+    required Color backgroundColor,
+    required Color borderColor,
+    required Widget child,
+  }) {
     return Container(
       padding: ResponsiveText.symmetric(context, vertical: 8, horizontal: 16),
       decoration: BoxDecoration(
@@ -2298,30 +2485,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: borderColor, width: 1),
       ),
-      child: Row(
-        children: [
-          Text(
-            '${side == 'L' ? AppLocalizations.of(context)!.left : AppLocalizations.of(context)!.right}: ',
-            style: ResponsiveText.bodySmall(
-              context,
-              fontWeight: FontWeight.bold,
-              color: textColor,
-            ),
-          ),
-          if (showBattery) ...[
-            _buildBatteryIndicator(batteryLevel),
-            SizedBox(width: ResponsiveText.getSize(context, 8)),
-          ],
-          Text(
-            statusText,
-            style: ResponsiveText.bodySmall(
-              context,
-              fontWeight: FontWeight.bold,
-              color: textColor,
-            ),
-          ),
-        ],
-      ),
+      child: child,
     );
   }
 
@@ -2585,109 +2749,17 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   }
 
   Widget _buildTimerDisplay() {
-    // 未启动时，时间重置为 00:00
-    final currentHasStarted = _getCurrentHasStarted();
+    final currentHasStarted = _getTimerDisplayHasStarted();
     final displayMinutes = currentHasStarted
         ? _elapsedTime.inMinutes.toString().padLeft(2, '0')
         : '00';
     final displaySeconds = currentHasStarted
         ? (_elapsedTime.inSeconds % 60).toString().padLeft(2, '0')
         : '00';
-    final isBoth = _selectedPump == PumpSelection.both;
-
-    if (isBoth) {
-      return FutureBuilder<Map<String, dynamic>>(
-        future: _getTimerDisplayData(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const SizedBox.shrink();
-          }
-          final data = snapshot.data!;
-
-          // 获取左右两侧的独立状态
-          final leftHasStarted = _leftHasStarted;
-          final leftDisplayMinutes = leftHasStarted
-              ? _leftElapsedTime.inMinutes.toString().padLeft(2, '0')
-              : '00';
-          final leftDisplaySeconds = leftHasStarted
-              ? (_leftElapsedTime.inSeconds % 60).toString().padLeft(2, '0')
-              : '00';
-          final leftPhaseMinutes = _leftPhaseDuration.inMinutes
-              .toString()
-              .padLeft(2, '0');
-          final leftPhaseSeconds = (_leftPhaseDuration.inSeconds % 60)
-              .toString()
-              .padLeft(2, '0');
-
-          final rightHasStarted = _rightHasStarted;
-          final rightDisplayMinutes = rightHasStarted
-              ? _rightElapsedTime.inMinutes.toString().padLeft(2, '0')
-              : '00';
-          final rightDisplaySeconds = rightHasStarted
-              ? (_rightElapsedTime.inSeconds % 60).toString().padLeft(2, '0')
-              : '00';
-          final rightPhaseMinutes = _rightPhaseDuration.inMinutes
-              .toString()
-              .padLeft(2, '0');
-          final rightPhaseSeconds = (_rightPhaseDuration.inSeconds % 60)
-              .toString()
-              .padLeft(2, '0');
-
-          // 运行时用 _leftTotalPhase 和 _rightTotalPhase（由 _handleSessionStatusUpdate 控制）
-          // 未运行时根据当前 flow mode 动态获取
-          final leftTotalPhases = currentHasStarted
-              ? _leftTotalPhase
-              : (data['totalPhases'] as int);
-          final rightTotalPhases = currentHasStarted
-              ? _rightTotalPhase
-              : (data['totalPhases'] as int);
-
-          return Row(
-            children: [
-              Expanded(
-                child: _buildSingleTimerCard(
-                  AppLocalizations.of(context)!.left,
-                  leftDisplayMinutes,
-                  leftDisplaySeconds,
-                  leftPhaseMinutes,
-                  leftPhaseSeconds,
-                  leftTotalPhases,
-                  _leftIntensityMode,
-                  // 用左侧的强度模式
-                  hasStarted: leftHasStarted,
-                  currentPhase: _leftCurrentPhase,
-                  elapsedTimeInPhase: _leftElapsedTimeInPhase,
-                  maxDuration: _maxDuration,
-                  deviceMaxDuration: leftHasStarted ? _deviceMaxDuration : null,
-                ),
-              ),
-              SizedBox(width: ResponsiveText.getSize(context, 12)),
-              Expanded(
-                child: _buildSingleTimerCard(
-                  AppLocalizations.of(context)!.right,
-                  rightDisplayMinutes,
-                  rightDisplaySeconds,
-                  rightPhaseMinutes,
-                  rightPhaseSeconds,
-                  rightTotalPhases,
-                  _rightIntensityMode,
-                  // 用右侧的强度模式
-                  hasStarted: rightHasStarted,
-                  currentPhase: _rightCurrentPhase,
-                  elapsedTimeInPhase: _rightElapsedTimeInPhase,
-                  maxDuration: _maxDuration,
-                  deviceMaxDuration: rightHasStarted ? _deviceMaxDuration : null,
-                ),
-              ),
-            ],
-          );
-        },
-      );
-    }
 
     Future<Map<String, dynamic>?> getInitialStateFuture() async {
       if (currentHasStarted) return null;
-      return await _getInitialDeviceState(_selectedPump == PumpSelection.left);
+      return _getInitialDeviceState(_getTimerInitialStateIsLeft());
     }
 
     return FutureBuilder<Map<String, dynamic>>(
@@ -2710,183 +2782,21 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                 : (initialStateSnapshot.data?['phaseDuration'] as Duration? ??
                       _phaseDuration);
 
-            final effectivePhaseMinutes = effectivePhaseDuration.inMinutes
-                .toString()
-                .padLeft(2, '0');
-            final effectivePhaseSeconds =
-                (effectivePhaseDuration.inSeconds % 60).toString().padLeft(
-                  2,
-                  '0',
-                );
-
-            return Container(
-              padding: ResponsiveText.padding(
-                context,
-                left: 8,
-                right: 12,
-                top: 12,
-                bottom: 8,
-              ),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xFFFDF7E4), Color(0xFFF5E6B3)],
-                ),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: Colors.grey.withValues(alpha: 0.3),
-                  width: 1,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const SizedBox(),
-                      Container(
-                        padding: ResponsiveText.symmetric(
-                          context,
-                          horizontal: 10,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColor.primaryPurple,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          displayMode == IntensityMode.stimulation
-                              ? AppLocalizations.of(context)!.stimulation
-                              : AppLocalizations.of(context)!.expression,
-                          style: ResponsiveText.caption(
-                            context,
-                            fontWeight: FontWeight.w500,
-                            color: AppColor.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Center(
-                    child: Text(
-                      '$displayMinutes:$displaySeconds',
-                      style: ResponsiveText.extraLarge(
-                        context,
-                        color: AppColor.textPrimary,
-                      ),
-                    ),
-                  ),
-                  Center(
-                    child: Text(
-                      '${AppLocalizations.of(context)!.phase} $currentPhase/$effectiveTotalPhases: ${currentHasStarted ? _elapsedTimeInPhase.inMinutes.toString().padLeft(2, '0') : '00'}:${currentHasStarted ? (_elapsedTimeInPhase.inSeconds % 60).toString().padLeft(2, '0') : '00'} / $effectivePhaseMinutes:$effectivePhaseSeconds | ${AppLocalizations.of(context)!.max.replaceAll(RegExp(r':'), '')} ${currentHasStarted ? (_deviceMaxDuration ?? _maxDuration) : _maxDuration}${AppLocalizations.of(context)!.minutes}',
-                      style: ResponsiveText.bodySmall(
-                        context,
-                        color: AppColor.textPrimary,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ],
-              ),
+            return UnifiedTimerCard(
+              displayMode: displayMode,
+              displayMinutes: displayMinutes,
+              displaySeconds: displaySeconds,
+              currentPhase: currentPhase,
+              effectiveTotalPhases: effectiveTotalPhases,
+              currentHasStarted: currentHasStarted,
+              effectivePhaseDuration: effectivePhaseDuration,
+              elapsedTimeInPhase: _elapsedTimeInPhase,
+              maxDuration: _maxDuration,
+              deviceMaxDuration: _deviceMaxDuration,
             );
           },
         );
       },
-    );
-  }
-
-  Widget _buildSingleTimerCard(
-    String side,
-    String minutes,
-    String seconds,
-    String phaseMinutes,
-    String phaseSeconds,
-    int totalPhases,
-    IntensityMode displayMode, {
-    bool? hasStarted,
-    int? currentPhase,
-    Duration? elapsedTimeInPhase,
-    int? maxDuration,
-    int? deviceMaxDuration,
-  }) {
-    // 如果提供了独立的状态参数就用它们，否则用全局状态（单边模式用）
-    final currentHasStarted = hasStarted ?? _getCurrentHasStarted();
-    final phase = currentPhase ?? (currentHasStarted ? _currentPhase : 1);
-    final timeInPhase = elapsedTimeInPhase ?? _elapsedTimeInPhase;
-    // Max 显示逻辑：运行时用 deviceMaxDuration ?? maxDuration，非运行时用 maxDuration
-    final effectiveMaxDuration = currentHasStarted 
-        ? (deviceMaxDuration ?? maxDuration ?? _maxDuration)
-        : (maxDuration ?? _maxDuration);
-
-    return Container(
-      padding: ResponsiveText.padding(context, all: 8),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFFDF7E4), Color(0xFFF5E6B3)],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.3), width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            side,
-            style: ResponsiveText.bodySmall(
-              context,
-              color: AppColor.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
-            decoration: BoxDecoration(
-              color: AppColor.primaryPurple,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              displayMode == IntensityMode.stimulation
-                  ? AppLocalizations.of(context)!.stim
-                  : AppLocalizations.of(context)!.expr,
-              style: ResponsiveText.bodySmall(context, color: AppColor.white),
-            ),
-          ),
-          Center(
-            child: Text(
-              '$minutes:$seconds',
-              style: ResponsiveText.style(
-                context,
-                fontSize: 30,
-                color: AppColor.textPrimary,
-              ),
-            ),
-          ),
-          Center(
-            child: Text(
-              '$phase/$totalPhases: ${currentHasStarted ? timeInPhase.inMinutes.toString().padLeft(2, '0') : '00'}:${currentHasStarted ? (timeInPhase.inSeconds % 60).toString().padLeft(2, '0') : '00'}',
-              style: ResponsiveText.bodySmall(
-                context,
-                color: AppColor.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          Center(
-            child: Text(
-              '${AppLocalizations.of(context)!.max.replaceAll(RegExp(r':'), '')} $effectiveMaxDuration${AppLocalizations.of(context)!.minutes}',
-              style: ResponsiveText.bodySmall(
-                context,
-                color: AppColor.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
