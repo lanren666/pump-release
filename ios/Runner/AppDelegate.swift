@@ -524,6 +524,16 @@ extension Date {
                 } else {
                     result(FlutterError(code: "OPEN_SETTINGS_FAILED", message: "Invalid settings URL", details: nil))
                 }
+            case "openExternalUrl":
+                guard let urlString = call.arguments as? String,
+                      let url = URL(string: urlString),
+                      url.scheme == "http" || url.scheme == "https" else {
+                    result(FlutterError(code: "INVALID_ARGUMENT", message: "url is required", details: nil))
+                    return
+                }
+                UIApplication.shared.open(url, options: [:], completionHandler: { success in
+                    result(success)
+                })
             case "loginAnonymous":
                 self.handleLoginAnonymous(call: call, result: result)
             case "getHomeList":

@@ -364,4 +364,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sessionCompleteTest => 'Session Complete Test';
+
+  @override
+  String get icpFilingSection => 'Legal & Filing';
+
+  @override
+  String get icpFilingLabel => 'ICP Filing No.';
+
+  @override
+  String get icpFilingHint =>
+      'Official China MIIT filing identifier. Tap the number to verify on the government portal.';
+
+  @override
+  String get icpFilingOpenFailed =>
+      'Could not open the filing website. Please try again later.';
 }

@@ -37,6 +37,12 @@ class AppConfig {
   /// Tune when firmware voltage curve is confirmed.
   static const int batVoltLowSessionThreshold = 120;
 
+  /// China mainland app ICP filing number (App 备案号). Shown in-app per MIIT rules.
+  static const String icpFilingNumber = '粤ICP备2026075101号-1A';
+
+  /// MIIT integrated filing query portal.
+  static const String icpFilingQueryUrl = 'https://beian.miit.gov.cn/';
+
   /// Mock设备列表（用于测试，当tuyaEnabled为false时使用）
   static final List<BluetoothDevice> mockDevices = [
     BluetoothDevice(

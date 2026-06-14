@@ -751,6 +751,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Session Complete Test'**
   String get sessionCompleteTest;
+
+  /// Section title for ICP filing information in system settings
+  ///
+  /// In en, this message translates to:
+  /// **'Legal & Filing'**
+  String get icpFilingSection;
+
+  /// Label for China ICP app filing number; number itself stays in official Chinese form
+  ///
+  /// In en, this message translates to:
+  /// **'ICP Filing No.'**
+  String get icpFilingLabel;
+
+  /// Explains ICP filing number for English and other non-Chinese locales
+  ///
+  /// In en, this message translates to:
+  /// **'Official China MIIT filing identifier. Tap the number to verify on the government portal.'**
+  String get icpFilingHint;
+
+  /// Shown when opening MIIT filing URL fails
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open the filing website. Please try again later.'**
+  String get icpFilingOpenFailed;
 }
 
 class _AppLocalizationsDelegate

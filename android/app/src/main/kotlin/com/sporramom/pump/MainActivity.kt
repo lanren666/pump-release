@@ -223,6 +223,25 @@ class MainActivity : FlutterActivity(), LocationListener {
                     }
                 }
 
+                "openExternalUrl" -> {
+                    val url = call.arguments as? String
+                    if (url.isNullOrBlank()) {
+                        result.error("INVALID_ARGUMENT", "url is required", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(url),
+                        )
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        android.util.Log.e("MainActivity", "❌ 打开外部链接失败: ${e.message}")
+                        result.error("OPEN_URL_FAILED", "Failed to open url: ${e.message}", null)
+                    }
+                }
+
                 "loginAnonymous" -> {
                     handleLoginAnonymous(call, result)
                 }

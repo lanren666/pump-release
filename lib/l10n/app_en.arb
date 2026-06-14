@@ -470,6 +470,22 @@
   "sessionCompleteTest": "Session Complete Test",
   "@sessionCompleteTest": {
     "description": "Debug menu item to preview session complete low battery dialog"
+  },
+  "icpFilingSection": "Legal & Filing",
+  "@icpFilingSection": {
+    "description": "Section title for ICP filing information in system settings"
+  },
+  "icpFilingLabel": "ICP Filing No.",
+  "@icpFilingLabel": {
+    "description": "Label for China ICP app filing number; number itself stays in official Chinese form"
+  },
+  "icpFilingHint": "Official China MIIT filing identifier. Tap the number to verify on the government portal.",
+  "@icpFilingHint": {
+    "description": "Explains ICP filing number for English and other non-Chinese locales"
+  },
+  "icpFilingOpenFailed": "Could not open the filing website. Please try again later.",
+  "@icpFilingOpenFailed": {
+    "description": "Shown when opening MIIT filing URL fails"
   }
 }
 

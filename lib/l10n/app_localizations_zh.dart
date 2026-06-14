@@ -345,4 +345,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sessionCompleteTest => '结束后充电提示测试';
+
+  @override
+  String get icpFilingSection => '备案信息';
+
+  @override
+  String get icpFilingLabel => 'ICP 备案号';
+
+  @override
+  String get icpFilingHint => '点击备案号可在工信部网站查询核对。';
+
+  @override
+  String get icpFilingOpenFailed => '无法打开备案查询页面，请稍后重试。';
 }

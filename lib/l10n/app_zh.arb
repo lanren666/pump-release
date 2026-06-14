@@ -150,6 +150,10 @@
   "lowBatteryContinue": "暂不充电，继续使用",
   "lowBatteryGotIt": "知道了",
   "lowBatteryTest": "低电量弹窗测试",
-  "sessionCompleteTest": "结束后充电提示测试"
+  "sessionCompleteTest": "结束后充电提示测试",
+  "icpFilingSection": "备案信息",
+  "icpFilingLabel": "ICP 备案号",
+  "icpFilingHint": "点击备案号可在工信部网站查询核对。",
+  "icpFilingOpenFailed": "无法打开备案查询页面，请稍后重试。"
 }
 

@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../models/setting.dart';
 import '../services/diagnostics/diagnostic_export_service.dart';
 import '../services/diagnostics/app_logger.dart';
+import '../services/external_link_service.dart';
 
 const String _languageKey = 'app_language';
 const String _languageDesc = 'Application language setting';
@@ -147,6 +148,8 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                         const Center(child: CircularProgressIndicator())
                       else ...[
                         _buildLanguageSection(),
+                        SizedBox(height: ResponsiveText.getSize(context, 24)),
+                        _buildIcpFilingSection(),
                         if (AppConfig.diagnosticsEnabled) ...[
                           SizedBox(height: ResponsiveText.getSize(context, 24)),
                           _buildDiagnosticsSection(),
@@ -277,6 +280,96 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         ],
       ),
     );
+  }
+
+  Widget _buildIcpFilingSection() {
+    final l10n = AppLocalizations.of(context)!;
+    return Container(
+      padding: ResponsiveText.symmetric(context, vertical: 24, horizontal: 24),
+      decoration: BoxDecoration(
+        color: AppColor.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.2), width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.icpFilingSection,
+            style: ResponsiveText.title(
+              context,
+              fontWeight: FontWeight.bold,
+              color: AppColor.textPrimary,
+            ),
+          ),
+          SizedBox(height: ResponsiveText.getSize(context, 12)),
+          Text(
+            l10n.icpFilingHint,
+            style: ResponsiveText.bodySmall(
+              context,
+              color: AppColor.textSecondary,
+            ),
+          ),
+          SizedBox(height: ResponsiveText.getSize(context, 20)),
+          InkWell(
+            onTap: _openIcpFilingWebsite,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: ResponsiveText.symmetric(
+                context,
+                horizontal: 4,
+                vertical: 8,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.icpFilingLabel,
+                          style: ResponsiveText.caption(
+                            context,
+                            color: AppColor.textSecondary,
+                          ),
+                        ),
+                        SizedBox(height: ResponsiveText.getSize(context, 4)),
+                        Text(
+                          AppConfig.icpFilingNumber,
+                          style: ResponsiveText.body(
+                            context,
+                            color: AppColor.primaryPurple,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.open_in_new,
+                    size: ResponsiveText.getSize(context, 18),
+                    color: AppColor.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openIcpFilingWebsite() async {
+    final launched = await ExternalLinkService.openHttpUrl(
+      AppConfig.icpFilingQueryUrl,
+    );
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.icpFilingOpenFailed),
+        ),
+      );
+    }
   }
 
   Widget _buildDiagnosticsSection() {
