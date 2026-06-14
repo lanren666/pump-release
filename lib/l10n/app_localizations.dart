@@ -703,6 +703,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not export logs. Please try again.'**
   String get exportLogsFailed;
+
+  /// Title for low battery dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Low Battery'**
+  String get lowBatteryTitle;
+
+  /// Low battery warning when connecting with insufficient charge
+  ///
+  /// In en, this message translates to:
+  /// **'Low battery for a full session (<20 mins left). Please charge before use.'**
+  String get lowBatteryConnectMessage;
+
+  /// Low battery prompt after session completes
+  ///
+  /// In en, this message translates to:
+  /// **'Great job on your session! Battery is insufficient for your next use. Please charge now.'**
+  String get lowBatterySessionCompleteMessage;
+
+  /// Primary button on connect low battery dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Got it, go charge'**
+  String get lowBatteryGoCharge;
+
+  /// Secondary action on connect low battery dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Continue without charging'**
+  String get lowBatteryContinue;
+
+  /// Acknowledge button on session complete low battery dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Got it'**
+  String get lowBatteryGotIt;
+
+  /// Debug menu item to preview connect low battery dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Low Battery Test'**
+  String get lowBatteryTest;
+
+  /// Debug menu item to preview session complete low battery dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Session Complete Test'**
+  String get sessionCompleteTest;
 }
 
 class _AppLocalizationsDelegate

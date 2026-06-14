@@ -22,6 +22,8 @@ import '../config/ble_channels.dart';
 import 'control_timer_display_logic.dart';
 import 'control_types.dart';
 import 'widgets/unified_timer_card.dart';
+import 'widgets/low_battery_dialog.dart';
+import '../services/battery/battery_alert_logic.dart';
 
 // 记录待确认的操作，用来处理容错
 class _PendingOperation {
@@ -132,6 +134,9 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   static const int _toleranceDelayMs = 2500;
   static const int _bothTimeSyncThresholdSeconds = 30; // both 模式时间容差阈值（秒）
 
+  /// Prevents duplicate session-complete low-battery dialogs per device per session.
+  final Set<String> _sessionCompleteLowBatteryShown = {};
+
   // 用于防止设备返回的旧状态覆盖用户操作
   // 记录用户最近的操作：设备ID -> (期望值, 操作时间)
   final Map<String, Map<String, _UserOperation>> _recentUserOperations = {};
@@ -204,6 +209,11 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
 
     final status = update.status;
     final isRunning = status['isRunning'] as int;
+
+    await _maybePromptLowBatteryAfterSessionEnd(
+      isLeftDevice: isLeftDevice,
+      newIsRunning: isRunning,
+    );
     
     // 容错检查：判断是否应该跳过isRunning相关的状态变更
     // 但即使跳过，也要继续处理数据更新（timePast等）
@@ -544,6 +554,12 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         });
       }
     } else if (isRunning == 1) {
+      if (isLeftDevice && !_leftHasStarted) {
+        _clearSessionLowBatteryPromptFlag(_leftDevice?.bluetoothId);
+      } else if (!isLeftDevice && !_rightHasStarted) {
+        _clearSessionLowBatteryPromptFlag(_rightDevice?.bluetoothId);
+      }
+
       final appIsRunning = _getCurrentHasStarted();
       // 在独立模式下，即使 appIsRunning 为 false，也应该更新数据
       final shouldUpdate = appIsRunning || _isIndividualMode;
@@ -691,6 +707,51 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     debugPrint(
       '✅ Control 页面已更新状态: deviceId=${update.deviceId}, isRunning=$isRunning, timePast=${timePast}s, timePastInPhase=${timePastInPhase}s, phase=$sessionPhase',
     );
+  }
+
+  Future<void> _maybePromptLowBatteryAfterSessionEnd({
+    required bool isLeftDevice,
+    required int newIsRunning,
+  }) async {
+    final device = isLeftDevice ? _leftDevice : _rightDevice;
+    if (device == null || device.devId == null) return;
+
+    final wasRunning = isLeftDevice ? _leftIsRunning : _rightIsRunning;
+    final hadStarted = isLeftDevice ? _leftHasStarted : _rightHasStarted;
+    final pendingOp = _pendingOperations[device.devId!];
+
+    if (!BatteryAlertLogic.isSessionEndedTransition(
+      wasRunning: wasRunning,
+      newIsRunning: newIsRunning,
+      hadStarted: hadStarted,
+      expectedIsRunning: pendingOp?.expectedIsRunning,
+    )) {
+      return;
+    }
+
+    if (_sessionCompleteLowBatteryShown.contains(device.bluetoothId)) return;
+
+    final freshDevice =
+        await _dbService.getDeviceByBluetoothId(device.bluetoothId);
+    final battery = freshDevice?.battery ?? device.battery;
+    if (!BatteryAlertLogic.isLowBatteryLevel(battery)) return;
+
+    _sessionCompleteLowBatteryShown.add(device.bluetoothId);
+
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      LowBatteryDialog.show(
+        context,
+        LowBatteryDialogVariant.sessionComplete,
+      );
+    });
+  }
+
+  void _clearSessionLowBatteryPromptFlag(String? bluetoothId) {
+    if (bluetoothId != null) {
+      _sessionCompleteLowBatteryShown.remove(bluetoothId);
+    }
   }
 
   // Future<void> _fetchDeviceConfigs(
@@ -3970,6 +4031,33 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                           );
                         },
                       ),
+                      if (AppConfig.debug) ...[
+                        SizedBox(height: ResponsiveText.getSize(context, 8)),
+                        _buildMenuItem(
+                          icon: Icons.battery_alert,
+                          title: AppLocalizations.of(context)!.lowBatteryTest,
+                          onTap: () {
+                            setState(() => _isMenuOpen = false);
+                            LowBatteryDialog.show(
+                              context,
+                              LowBatteryDialogVariant.connectWarning,
+                            );
+                          },
+                        ),
+                        SizedBox(height: ResponsiveText.getSize(context, 8)),
+                        _buildMenuItem(
+                          icon: Icons.battery_alert,
+                          title:
+                              AppLocalizations.of(context)!.sessionCompleteTest,
+                          onTap: () {
+                            setState(() => _isMenuOpen = false);
+                            LowBatteryDialog.show(
+                              context,
+                              LowBatteryDialogVariant.sessionComplete,
+                            );
+                          },
+                        ),
+                      ],
                     ],
                   ),
                 ),

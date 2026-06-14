@@ -438,6 +438,38 @@
   "exportLogsFailed": "Could not export logs. Please try again.",
   "@exportLogsFailed": {
     "description": "Shown when log export fails"
+  },
+  "lowBatteryTitle": "Low Battery",
+  "@lowBatteryTitle": {
+    "description": "Title for low battery dialog"
+  },
+  "lowBatteryConnectMessage": "Low battery for a full session (<20 mins left). Please charge before use.",
+  "@lowBatteryConnectMessage": {
+    "description": "Low battery warning when connecting with insufficient charge"
+  },
+  "lowBatterySessionCompleteMessage": "Great job on your session! Battery is insufficient for your next use. Please charge now.",
+  "@lowBatterySessionCompleteMessage": {
+    "description": "Low battery prompt after session completes"
+  },
+  "lowBatteryGoCharge": "Got it, go charge",
+  "@lowBatteryGoCharge": {
+    "description": "Primary button on connect low battery dialog"
+  },
+  "lowBatteryContinue": "Continue without charging",
+  "@lowBatteryContinue": {
+    "description": "Secondary action on connect low battery dialog"
+  },
+  "lowBatteryGotIt": "Got it",
+  "@lowBatteryGotIt": {
+    "description": "Acknowledge button on session complete low battery dialog"
+  },
+  "lowBatteryTest": "Low Battery Test",
+  "@lowBatteryTest": {
+    "description": "Debug menu item to preview connect low battery dialog"
+  },
+  "sessionCompleteTest": "Session Complete Test",
+  "@sessionCompleteTest": {
+    "description": "Debug menu item to preview session complete low battery dialog"
   }
 }
 

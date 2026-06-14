@@ -338,4 +338,30 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get exportLogsFailed => 'Could not export logs. Please try again.';
+
+  @override
+  String get lowBatteryTitle => 'Low Battery';
+
+  @override
+  String get lowBatteryConnectMessage =>
+      'Low battery for a full session (<20 mins left). Please charge before use.';
+
+  @override
+  String get lowBatterySessionCompleteMessage =>
+      'Great job on your session! Battery is insufficient for your next use. Please charge now.';
+
+  @override
+  String get lowBatteryGoCharge => 'Got it, go charge';
+
+  @override
+  String get lowBatteryContinue => 'Continue without charging';
+
+  @override
+  String get lowBatteryGotIt => 'Got it';
+
+  @override
+  String get lowBatteryTest => 'Low Battery Test';
+
+  @override
+  String get sessionCompleteTest => 'Session Complete Test';
 }

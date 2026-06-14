@@ -142,6 +142,14 @@
   "diagnosticsSection": "诊断与日志",
   "exportDiagnosticLogs": "导出诊断日志",
   "diagnosticLogsHint": "导出近期应用与硬件交互记录，便于内测排查问题。",
-  "exportLogsFailed": "导出失败，请重试。"
+  "exportLogsFailed": "导出失败，请重试。",
+  "lowBatteryTitle": "电量不足",
+  "lowBatteryConnectMessage": "电量不足以完成一次完整吸乳（剩余不足 20 分钟）。请先充电后再使用。",
+  "lowBatterySessionCompleteMessage": "本次吸乳已完成！电量不足以支持下次使用，请立即充电。",
+  "lowBatteryGoCharge": "知道了，去充电",
+  "lowBatteryContinue": "暂不充电，继续使用",
+  "lowBatteryGotIt": "知道了",
+  "lowBatteryTest": "低电量弹窗测试",
+  "sessionCompleteTest": "结束后充电提示测试"
 }
 

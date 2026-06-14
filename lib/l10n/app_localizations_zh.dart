@@ -321,4 +321,28 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get exportLogsFailed => '导出失败，请重试。';
+
+  @override
+  String get lowBatteryTitle => '电量不足';
+
+  @override
+  String get lowBatteryConnectMessage => '电量不足以完成一次完整吸乳（剩余不足 20 分钟）。请先充电后再使用。';
+
+  @override
+  String get lowBatterySessionCompleteMessage => '本次吸乳已完成！电量不足以支持下次使用，请立即充电。';
+
+  @override
+  String get lowBatteryGoCharge => '知道了，去充电';
+
+  @override
+  String get lowBatteryContinue => '暂不充电，继续使用';
+
+  @override
+  String get lowBatteryGotIt => '知道了';
+
+  @override
+  String get lowBatteryTest => '低电量弹窗测试';
+
+  @override
+  String get sessionCompleteTest => '结束后充电提示测试';
 }

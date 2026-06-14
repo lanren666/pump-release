@@ -16,8 +16,11 @@ import '../services/tuya/ble_dp_service.dart';
 import '../services/tuya/dp_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../services/diagnostics/app_logger.dart';
+import '../services/battery/battery_alert_logic.dart';
+import '../services/battery/battery_voltage_service.dart';
 import 'control.dart';
 import 'widgets/pump_side_dialog.dart';
+import 'widgets/low_battery_dialog.dart';
 import 'database_viewer.dart';
 
 class HomePage extends StatefulWidget {
@@ -41,6 +44,7 @@ class _HomePageState extends State<HomePage>
   Timer? _refreshTimer;
   final DatabaseService _dbService = DatabaseService();
   final List<BluetoothDevice> _scannedDevices = [];
+  ConnectedDevice? _devicePendingConnectLowBatteryCheck;
 
   @override
   void initState() {
@@ -1132,7 +1136,7 @@ class _HomePageState extends State<HomePage>
 
   void _showPumpSideDialog(BluetoothDevice device) {
     final occupiedPositions = _connectedDevices.map((d) => d.position).toSet();
-    showDialog(
+    showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
@@ -1144,6 +1148,31 @@ class _HomePageState extends State<HomePage>
           },
         );
       },
+    ).then((_) {
+      final pending = _devicePendingConnectLowBatteryCheck;
+      _devicePendingConnectLowBatteryCheck = null;
+      if (pending != null && mounted) {
+        _maybeShowConnectLowBatteryDialog(pending);
+      }
+    });
+  }
+
+  Future<void> _maybeShowConnectLowBatteryDialog(ConnectedDevice device) async {
+    final batVolt = await BatteryVoltageService.readBatVolt(device.bluetoothId);
+    final freshDevice =
+        await _dbService.getDeviceByBluetoothId(device.bluetoothId);
+    final battery = freshDevice?.battery ?? device.battery;
+
+    final shouldWarn = BatteryAlertLogic.isBatVoltInsufficientForFullSession(
+      batVolt,
+    ) ||
+        (batVolt == null && BatteryAlertLogic.isLowBatteryLevel(battery));
+
+    if (!shouldWarn || !mounted) return;
+
+    await LowBatteryDialog.show(
+      context,
+      LowBatteryDialogVariant.connectWarning,
     );
   }
 
@@ -1326,6 +1355,12 @@ class _HomePageState extends State<HomePage>
           'devId': newDevice.devId,
           'position': position,
         });
+
+        final savedDevice = await _dbService.getDeviceByBluetoothId(
+          device.bluetoothId,
+        );
+        _devicePendingConnectLowBatteryCheck = savedDevice ?? newDevice;
+
         return true;
       } else {
         debugPrint('❌ 设备连接失败: ${device.bluetoothId}');

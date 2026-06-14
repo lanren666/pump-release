@@ -30,6 +30,13 @@ class AppConfig {
     defaultValue: false,
   );
 
+  /// Bat_Volt max from firmware (0x1A4 = 420).
+  static const int batVoltMax = 0x1A4;
+
+  /// Placeholder: Bat_Volt below this → less than ~20 min full session.
+  /// Tune when firmware voltage curve is confirmed.
+  static const int batVoltLowSessionThreshold = 120;
+
   /// Mock设备列表（用于测试，当tuyaEnabled为false时使用）
   static final List<BluetoothDevice> mockDevices = [
     BluetoothDevice(
