@@ -35,7 +35,7 @@ class AppConfig {
 
   /// Placeholder: Bat_Volt below this → less than ~20 min full session.
   /// Tune when firmware voltage curve is confirmed.
-  static const int batVoltLowSessionThreshold = 120;
+  static const int batVoltLowSessionThreshold = 330;
 
   /// China mainland app ICP filing number (App 备案号). Shown in-app per MIIT rules.
   static const String icpFilingNumber = '粤ICP备2026075101号-1A';
