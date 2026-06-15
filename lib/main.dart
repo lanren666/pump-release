@@ -14,6 +14,7 @@ import 'services/tuya/tuya_sdk_service.dart';
 import 'services/database_service.dart';
 import 'services/tuya/dp_constants.dart';
 import 'services/tuya/ble_dp_service.dart';
+import 'services/tuya/device_listener_service.dart';
 
 void main() {
   runZonedGuarded(() {
@@ -83,6 +84,7 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
   final LocaleManager _localeManager = LocaleManager();
   Locale? _locale;
   bool _isLoadingLocale = true;
+  bool _hasSavedLanguagePreference = false;
 
   @override
   void initState() {
@@ -107,14 +109,20 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
       const languageKey = 'app_language';
       final languageSetting = await _dbService.getSettingByKey(languageKey);
 
-      final Locale? newLocale;
+      final Locale newLocale;
       if (languageSetting != null) {
+        _hasSavedLanguagePreference = true;
         newLocale = LocaleManager.localeForLanguageCode(languageSetting.value);
       } else if (AppConfig.debugLocale != null) {
-        newLocale = AppConfig.debugLocale;
+        _hasSavedLanguagePreference = false;
+        newLocale = AppConfig.debugLocale!;
       } else {
-        // 未保存用户偏好：locale 为 null，由 MaterialApp 按系统语言解析
-        newLocale = null;
+        // No saved preference: resolve system locale explicitly. Passing null to
+        // MaterialApp.locale relies on LocalizationsResolver._resolvedLocale
+        // captured at cold start, which may still be en before the platform
+        // locale is ready (while PlatformDispatcher.locale is already zh).
+        _hasSavedLanguagePreference = false;
+        newLocale = LocaleManager.resolveSystemLocale();
       }
 
       _localeManager.localeNotifier.value = newLocale;
@@ -127,7 +135,9 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
       }
     } catch (e) {
       debugPrint('加载语言设置失败: $e');
-      final Locale? fallbackLocale = AppConfig.debugLocale;
+      final Locale fallbackLocale =
+          AppConfig.debugLocale ?? LocaleManager.resolveSystemLocale();
+      _hasSavedLanguagePreference = false;
       _localeManager.localeNotifier.value = fallbackLocale;
       if (mounted) {
         setState(() {
@@ -167,24 +177,11 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
       if (rememberedDevices.isEmpty) return;
 
       for (final device in rememberedDevices) {
-        if (device.devId == null || device.devId!.isEmpty) continue;
         if (!device.isRunning) continue;
 
-        try {
-          final isOnline =
-              await _connectionChannel.invokeMethod('isDeviceOnline', {
-                    'deviceId': device.devId,
-                  })
-                  as bool? ??
-              false;
-          if (!isOnline) continue;
-
-          await _connectionChannel.invokeMethod('registerDeviceListener', {
-            'deviceId': device.devId,
-          });
-          debugPrint('前台恢复: 已重新注册设备监听 devId=${device.devId}');
-        } catch (e) {
-          debugPrint('前台恢复: 检查/注册设备 ${device.devId} 失败: $e');
+        final registered = await DeviceListenerService.registerIfRunning(device);
+        if (registered) {
+          debugPrint('前台恢复: 已重新注册设备监听 bluetoothId=${device.bluetoothId}');
         }
       }
     } catch (e) {
@@ -234,6 +231,7 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
         }
 
         if (device.isRunning) {
+          await DeviceListenerService.registerIfRunning(device);
           continue;
         }
 
@@ -254,17 +252,8 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
           if (isOnline) {
             debugPrint('设备已在线，更新状态并注册监听器: ${device.devId}');
             await _updateDeviceRunningStatus(device.devId!, true);
-            
-            // 注册设备监听器，确保能接收到 DP 更新和状态变化
-            try {
-              await _connectionChannel.invokeMethod('registerDeviceListener', {
-                // registerDeviceListener expects bluetoothId (uuid) on iOS.
-                'deviceId': device.bluetoothId,
-              });
-              debugPrint('设备监听器注册成功: ${device.bluetoothId}');
-            } catch (e) {
-              debugPrint('注册设备监听器失败: $e');
-            }
+
+            await DeviceListenerService.registerIfRunning(device);
             
             continue;
           }
@@ -291,6 +280,9 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
 
             if (connected) {
               debugPrint('设备重连成功: ${device.devId}');
+              await DeviceListenerService.registerIfRunning(
+                device.copyWith(isRunning: true),
+              );
             } else {
               debugPrint('设备重连失败: ${device.devId}');
             }
@@ -355,6 +347,20 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
       debugPrint('设备运行状态已更新: devId=$devId, isRunning=$isRunning');
     } catch (e) {
       debugPrint('更新设备运行状态失败: $e');
+    }
+  }
+
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    if (_hasSavedLanguagePreference) {
+      return;
+    }
+    final Locale resolved = LocaleManager.resolveLocaleFromPreferredList(locales);
+    _localeManager.localeNotifier.value = resolved;
+    if (mounted) {
+      setState(() {
+        _locale = resolved;
+      });
     }
   }
 
