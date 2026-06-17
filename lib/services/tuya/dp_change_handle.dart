@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../database_service.dart';
 import '../diagnostics/app_logger.dart';
 import 'dp_constants.dart';
+import 'session_setting_parser.dart';
 import 'ble_dp_service.dart';
 
 // SessionStatus 更新数据
@@ -65,10 +66,21 @@ class DpChangeHandle {
       try {
         _dpReportSubscription = BleDpService.dpReportStream.listen(
           (reportData) {
-            // 遍历所有上报的 DP 数据点
             for (final dp in reportData.dps) {
-              // 调用 handle 方法处理每个 DP 更新
-              handleInstance.handle(reportData.deviceId, dp.dpId, dp.value);
+              final dpId = _normalizeDpId(dp.dpId);
+              if (dpId == DpConstants.sessionStatus) {
+                debugPrint(
+                  '📡 DP105 sessionStatus [transport] deviceId=${reportData.deviceId} '
+                  'rawType=${dp.value.runtimeType} rawValue=${dp.value}',
+                );
+              } else if (dpId == DpConstants.stimulationSucLvl ||
+                  dpId == DpConstants.expressionSucLvl) {
+                debugPrint(
+                  '📡 DP$dpId suction [transport] deviceId=${reportData.deviceId} '
+                  'value=${dp.value}',
+                );
+              }
+              handleInstance.handle(reportData.deviceId, dpId, dp.value);
             }
           },
           onError: (error) {
@@ -100,6 +112,7 @@ class DpChangeHandle {
   }
 
   Future<void> handle(String deviceId, String dpId, dynamic dpValue) async {
+    dpId = _normalizeDpId(dpId);
     AppLogger.hardware('dp_handle', {
       'deviceId': deviceId,
       'dpId': dpId,
@@ -166,12 +179,23 @@ class DpChangeHandle {
         break;
       case DpConstants.sessionStatus:
         try {
-          // 确保 dpValue 是字符串类型
-          final String dpValueStr = dpValue is String ? dpValue : dpValue.toString();
+          final String dpValueStr = dpValue is String
+              ? dpValue
+              : dpValue.toString();
+          debugPrint(
+            '📥 DP105 sessionStatus [received] deviceId=$deviceId '
+            'hexLen=${dpValueStr.length} hex=$dpValueStr',
+          );
           final parsedStatus = parseSessionStatus(dpValueStr);
-          // 加上时间，毫秒级， 人类可阅读的 不要使用时间戳
-          final timestamp = DateTime.now().toIso8601String();
-          debugPrint('📥 flutter 开始解析 SessionStatus: deviceId=$deviceId, dpValue=$dpValue, type=${dpValue.runtimeType}, timestamp=$timestamp, ${DateTime.now().toIso8601String()}');
+          debugPrint(
+            '✅ DP105 sessionStatus [parsed] deviceId=$deviceId '
+            'isRunning=${parsedStatus['isRunning']} '
+            'timePast=${parsedStatus['timePast']}s '
+            'timePastInPhase=${parsedStatus['timePastInPhase']}s '
+            'phase=${parsedStatus['sessionPhase']} '
+            'mode=${parsedStatus['sessionModeName']}'
+            '${parsedStatus['batVolt'] != null ? ' batVolt=${parsedStatus['batVolt']}' : ''}',
+          );
 
           _sessionStatusController.add(
             SessionStatusUpdate(deviceId: deviceId, status: parsedStatus),
@@ -183,9 +207,19 @@ class DpChangeHandle {
             'sessionModeName': parsedStatus['sessionModeName'],
           });
         } catch (e, stackTrace) {
-          debugPrint('❌ SessionStatus 解析失败: deviceId=$deviceId, dpValue=$dpValue, error=$e');
+          debugPrint(
+            '❌ DP105 sessionStatus [parse failed] deviceId=$deviceId '
+            'rawValue=$dpValue error=$e',
+          );
           debugPrint('❌ Stack trace: $stackTrace');
         }
+        break;
+      case DpConstants.sessionSetting:
+        SessionSettingParser.logSessionSettingPayload(
+          source: 'dpReport',
+          deviceId: deviceId,
+          rawValue: dpValue,
+        );
         break;
       case DpConstants.batteryLevel:
         final device = await _dbService.getDeviceByDevId(deviceId);
@@ -211,40 +245,56 @@ class DpChangeHandle {
     }
   }
 
+  static String _normalizeDpId(dynamic dpId) {
+    if (dpId == null) return '';
+    return dpId.toString();
+  }
+
   static String _truncateForLog(String s, int max) {
     if (s.length <= max) return s;
     return '${s.substring(0, max)}…';
   }
 
-  // 解析会话状态
+  // 解析会话状态（DP 105）
+  // 固件格式：22 hex 核心字段 + 4 hex Bat_Volt（共 26 hex）；老设备可能仅 22 hex。
+  static const int sessionStatusCoreHexLength = 22;
+  static const int sessionStatusWithBatVoltHexLength = 26;
+
   static Map<String, dynamic> parseSessionStatus(String dpValue) {
-    // 处理数据长度不匹配的情况
-    String normalizedValue = dpValue.trim();
+    String normalizedValue = dpValue.trim().toUpperCase();
     if (normalizedValue.length == 24) {
-      // 如果长度是 24，尝试去掉前 2 个字符（可能是前缀）
-      debugPrint('⚠️ SessionStatus 数据长度异常 (24字符)，尝试去掉前2个字符: $normalizedValue');
+      // Legacy: 24 hex with a 1-byte prefix — drop first byte.
+      debugPrint(
+        '⚠️ SessionStatus 数据长度异常 (24字符)，尝试去掉前2个字符: $normalizedValue',
+      );
       normalizedValue = normalizedValue.substring(2);
-    } else if (normalizedValue.length != 22) {
+    }
+
+    final isLegacyCoreOnly = normalizedValue.length == sessionStatusCoreHexLength;
+    final isWithBatVolt =
+        normalizedValue.length == sessionStatusWithBatVoltHexLength;
+    if (!isLegacyCoreOnly && !isWithBatVolt) {
       throw FormatException(
-        'SessionStatus 数据长度不正确: 期望 22 个字符，实际 ${normalizedValue.length} 个字符，数据: $normalizedValue',
+        'SessionStatus 数据长度不正确: 期望 $sessionStatusCoreHexLength 或 '
+        '$sessionStatusWithBatVoltHexLength 个字符，实际 ${normalizedValue.length} 个字符，'
+        '数据: $normalizedValue',
       );
     }
 
-    if (normalizedValue.length < 22) {
-      throw FormatException(
-        'SessionStatus 数据长度不足: 期望至少 22 个字符，实际 ${normalizedValue.length} 个字符，数据: $normalizedValue',
-      );
-    }
+    final core = normalizedValue.substring(0, sessionStatusCoreHexLength);
+    final batVolt = isWithBatVolt
+        ? SessionSettingParser.parseBatVolt(normalizedValue)
+        : null;
 
-    final timePast = normalizedValue.substring(0, 4);
-    final timePastInPhase = dpValue.substring(4, 8);
-    final sessionPhase = dpValue.substring(8, 10);
-    final sessionMode = dpValue.substring(10, 12);
-    final totalPhase = dpValue.substring(12, 14);
-    final maxTime = dpValue.substring(14, 16);
-    final isCustom = dpValue.substring(16, 18);
-    final isRunning = dpValue.substring(18, 20);
-    final totalTimeInPhase = dpValue.substring(20, 22);
+    final timePast = core.substring(0, 4);
+    final timePastInPhase = core.substring(4, 8);
+    final sessionPhase = core.substring(8, 10);
+    final sessionMode = core.substring(10, 12);
+    final totalPhase = core.substring(12, 14);
+    final maxTime = core.substring(14, 16);
+    final isCustom = core.substring(16, 18);
+    final isRunning = core.substring(18, 20);
+    final totalTimeInPhase = core.substring(20, 22);
 
     // timePast 单位是秒，十六进制转十进制
     final timePastSeconds = int.parse(timePast, radix: 16);
@@ -292,13 +342,14 @@ class DpChangeHandle {
       'timePastInPhase': timePastInPhaseSeconds, // 阶段总计用时（秒）
       'timePastInPhaseFormatted': timePastInPhaseFormatted, // 格式化时间 (mm:ss)
       'sessionPhase': sessionPhaseValue, // 当前阶段 (1-4)
-      'sessionMode': sessionModeValue, // 0=stimulation, 1=expression
+      'sessionMode': sessionModeValue, // 0x01=stimulation, 0x02=expression
       'sessionModeName': sessionModeName, // 'stimulation' 或 'expression'
       'totalPhase': totalPhaseValue, // 总阶段数 (2-4)
       'maxTime': maxTimeMinutes, // 最大时间（分钟）
       'isCustom': isCustomValue, // 是否自定义会话
       'isRunning': isRunningValue, // 是否正在运行
       'totalTimeInPhase': totalTimeInPhaseMinutes, // 当前阶段总时间（分钟）
+      if (batVolt != null) 'batVolt': batVolt, // 末尾 2 字节电池电压（仅 26 hex）
     };
   }
 }

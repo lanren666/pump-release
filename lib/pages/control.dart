@@ -208,7 +208,13 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   Future<void> _handleSessionStatusUpdate(SessionStatusUpdate update) async {
     final isLeftDevice = _leftDevice?.devId == update.deviceId;
     final isRightDevice = _rightDevice?.devId == update.deviceId;
-    if (!isLeftDevice && !isRightDevice) return;
+    if (!isLeftDevice && !isRightDevice) {
+      debugPrint(
+        '⚠️ DP105 sessionStatus [ignored] deviceId=${update.deviceId} '
+        'leftDevId=${_leftDevice?.devId} rightDevId=${_rightDevice?.devId}',
+      );
+      return;
+    }
 
     final status = update.status;
     final isRunning = status['isRunning'] as int;
@@ -966,77 +972,9 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       }
     }
 
-    // 根据设备的当前 intensity mode 过滤 DP 更新
-    // 在刺激模式下，只处理刺激模式相关的 DP（106, 107）
-    // 在吸乳模式下，只处理吸乳模式相关的 DP（108, 109）
-    final deviceIntensityMode = isLeft ? _leftIntensityMode : _rightIntensityMode;
-    final isStimulationDp = update.dpId == DpConstants.stimulationSucLvl || 
-                           update.dpId == DpConstants.stimulationHybrid;
-    final isExpressionDp = update.dpId == DpConstants.expressionSucLvl || 
-                          update.dpId == DpConstants.expressionHybrid;
-    
-    if (deviceHasStarted) {
-      // // 设备已启动时，根据当前模式过滤
-      // if (deviceIntensityMode == IntensityMode.stimulation && isExpressionDp) {
-      //   debugPrint('⚠️ 设备在刺激模式，忽略吸乳模式 DP 更新: ${update.dpId}');
-      //   return;
-      // }
-      // if (deviceIntensityMode == IntensityMode.expression && isStimulationDp) {
-      //   debugPrint('⚠️ 设备在吸乳模式，忽略刺激模式 DP 更新: ${update.dpId}');
-      //   return;
-      // }
-    }
+    // DP 106/108: apply device-reported suction as-is (no mode filter, no debounce).
 
-    // 检查是否是用户操作导致的设备状态更新，如果是且值不一致，则忽略旧值
-    if (update.dpId == DpConstants.stimulationSucLvl || 
-        update.dpId == DpConstants.expressionSucLvl) {
-      final deviceId = update.deviceId;
-      final deviceOperations = _recentUserOperations[deviceId];
-      if (deviceOperations != null) {
-        final userOp = deviceOperations[update.dpId];
-        if (userOp != null) {
-          final timeSinceOp = DateTime.now().difference(userOp.timestamp).inMilliseconds;
-          if (timeSinceOp < _ignoreDeviceUpdateWindowMs) {
-            final deviceValue = (update.value as num).toDouble();
-            // 如果设备返回的值与用户操作的值不一致
-            if ((deviceValue - userOp.expectedValue).abs() > 0.1) {
-              // 检查当前UI显示的值
-              double currentValue;
-              if (update.dpId == DpConstants.stimulationSucLvl) {
-                currentValue = isLeft ? _leftStimulationSuctionLevel : _rightStimulationSuctionLevel;
-              } else {
-                currentValue = isLeft ? _leftExpressionSuctionLevel : _rightExpressionSuctionLevel;
-              }
-              
-              // 如果当前值更接近用户期望的值，说明用户已经操作到了更新的值
-              // 此时设备返回的旧值应该被忽略，避免覆盖用户的最新操作
-              final currentDiff = (currentValue - userOp.expectedValue).abs();
-              final deviceDiff = (deviceValue - userOp.expectedValue).abs();
-              
-              if (currentDiff < deviceDiff) {
-                // 当前值更接近用户期望的值，忽略设备返回的旧值
-                // debugPrint('🚫 忽略设备返回的旧状态: 期望=${userOp.expectedValue}, 设备返回=$deviceValue, 当前=$currentValue');
-                return;
-              }
-              // 如果设备返回的值更接近用户期望的值，可能是设备确认了用户操作，接受它
-            } else {
-              // 值匹配（误差在0.1以内），清除操作记录
-              deviceOperations.remove(update.dpId);
-              if (deviceOperations.isEmpty) {
-                _recentUserOperations.remove(deviceId);
-              }
-            }
-          } else {
-            // 操作记录过期（超过800ms），清除
-            deviceOperations.remove(update.dpId);
-            if (deviceOperations.isEmpty) {
-              _recentUserOperations.remove(deviceId);
-            }
-          }
-        }
-      }
-    }
-    // 混合模式：同样防止设备旧状态覆盖用户操作
+    // 混合模式 hybrid：防止设备旧状态覆盖用户操作
     if (update.dpId == DpConstants.stimulationHybrid) {
       final deviceId = update.deviceId;
       final deviceOperations = _recentUserOperations[deviceId];
@@ -1074,21 +1012,25 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
           final v = (update.value as num).toDouble();
           if (isLeft) {
             _leftStimulationSuctionLevel = v;
-            // debugPrint('✅ 更新左侧刺激吸力大小: $v');
           } else if (isRight) {
             _rightStimulationSuctionLevel = v;
-            // debugPrint('✅ 更新右侧刺激吸力大小: $v');
           }
+          debugPrint(
+            '✅ DP106 stimulationSucLvl deviceId=${update.deviceId} '
+            'side=${isLeft ? 'L' : 'R'} value=$v',
+          );
           break;
         case DpConstants.expressionSucLvl:
           final v = (update.value as num).toDouble();
           if (isLeft) {
             _leftExpressionSuctionLevel = v;
-            // debugPrint('✅ 更新左侧吸乳吸力大小: $v');
           } else if (isRight) {
             _rightExpressionSuctionLevel = v;
-            // debugPrint('✅ 更新右侧吸乳吸力大小: $v');
           }
+          debugPrint(
+            '✅ DP108 expressionSucLvl deviceId=${update.deviceId} '
+            'side=${isLeft ? 'L' : 'R'} value=$v',
+          );
           break;
         case DpConstants.stimulationHybrid:
           final v = update.value as bool;
