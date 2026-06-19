@@ -9,6 +9,7 @@ import '../services/database_service.dart';
 import '../models/connected_device.dart';
 import '../models/setting.dart';
 import 'custom_flow.dart';
+import 'custom_flow_config.dart';
 import 'home.dart';
 import 'settings.dart';
 import 'system_settings.dart';
@@ -1373,18 +1374,25 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   }
 
   Future<void> _loadCustomFlowDescription() async {
-    final setting = await _dbService.getSettingByKey('custom_flow_phases');
-    if (setting != null) {
-      final List<dynamic> jsonList = jsonDecode(setting.value);
-      final parts = jsonList.map((e) {
-        final duration = e['duration'];
-        return '${duration}min';
-      }).toList();
-      setState(() => _customFlowDescription = parts.join(' -> '));
-    } else {
-      // 用默认配置
-      setState(() => _customFlowDescription = '2min -> 15min');
-    }
+    final phases = await CustomFlowConfig.loadPhasesForSelectedTab(_dbService);
+    setState(
+      () => _customFlowDescription = CustomFlowConfig.formatDescription(phases),
+    );
+  }
+
+  List<Map<String, int>> _phasesToModeDurations(List<Phase> phases) {
+    return phases
+        .map(
+          (p) => {
+            p.mode == PhaseMode.stimulation ? 'stimulation' : 'expression':
+                p.duration,
+          },
+        )
+        .toList();
+  }
+
+  Future<List<Phase>> _getActiveCustomPhases() async {
+    return CustomFlowConfig.loadPhasesForSelectedTab(_dbService);
   }
 
   Future<IntensityMode?> _getFirstPhaseIntensityMode() async {
@@ -1393,15 +1401,11 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       case SessionMode.boostMilk:
         return IntensityMode.stimulation;
       case SessionMode.custom:
-        final setting = await _dbService.getSettingByKey('custom_flow_phases');
-        if (setting != null) {
-          final List<dynamic> jsonList = jsonDecode(setting.value);
-          if (jsonList.isNotEmpty) {
-            final mode = jsonList[0]['mode'];
-            return mode == 'stimulation'
-                ? IntensityMode.stimulation
-                : IntensityMode.expression;
-          }
+        final phases = await _getActiveCustomPhases();
+        if (phases.isNotEmpty) {
+          return phases.first.mode == PhaseMode.stimulation
+              ? IntensityMode.stimulation
+              : IntensityMode.expression;
         }
         return null;
       case SessionMode.defaultMode:
@@ -1415,12 +1419,8 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       case SessionMode.boostMilk:
         return 2;
       case SessionMode.custom:
-        final setting = await _dbService.getSettingByKey('custom_flow_phases');
-        if (setting != null) {
-          final List<dynamic> jsonList = jsonDecode(setting.value);
-          return jsonList.length;
-        }
-        return 2;
+        final phases = await _getActiveCustomPhases();
+        return phases.isNotEmpty ? phases.length : 2;
       case SessionMode.defaultMode:
         return 2;
     }
@@ -1439,17 +1439,11 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
           {'expression': 3},
         ];
       case SessionMode.custom:
-        final setting = await _dbService.getSettingByKey('custom_flow_phases');
-        if (setting != null) {
-          final List<dynamic> jsonList = jsonDecode(setting.value);
-          return jsonList.map<Map<String, int>>((e) {
-            return {e['mode']: e['duration'] as int};
-          }).toList();
+        final phases = await _getActiveCustomPhases();
+        if (phases.isNotEmpty) {
+          return _phasesToModeDurations(phases);
         }
-        return [
-          {'stimulation': 2},
-          {'expression': 15},
-        ];
+        return _phasesToModeDurations(CustomFlowConfig.defaultCustomPhases);
       case SessionMode.defaultMode:
         return [
           {'stimulation': 2},
@@ -1483,25 +1477,19 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         };
         break;
       case SessionMode.custom:
-        final setting = await _dbService.getSettingByKey('custom_flow_phases');
-        if (setting != null) {
-          final List<dynamic> jsonList = jsonDecode(setting.value);
-          if (jsonList.isNotEmpty) {
-            final firstPhase = jsonList[0];
-            final mode = firstPhase['mode'] as String;
-            final duration = firstPhase['duration'] as int;
-            final totalPhases = jsonList.length;
-            result = {
-              'elapsedTime': Duration.zero,
-              'elapsedTimeInPhase': Duration.zero,
-              'currentPhase': 1,
-              'totalPhase': totalPhases,
-              'phaseDuration': Duration(minutes: duration),
-              'intensityMode': mode == 'stimulation'
-                  ? IntensityMode.stimulation
-                  : IntensityMode.expression,
-            };
-          }
+        final phases = await _getActiveCustomPhases();
+        if (phases.isNotEmpty) {
+          final firstPhase = phases.first;
+          result = {
+            'elapsedTime': Duration.zero,
+            'elapsedTimeInPhase': Duration.zero,
+            'currentPhase': 1,
+            'totalPhase': phases.length,
+            'phaseDuration': Duration(minutes: firstPhase.duration),
+            'intensityMode': firstPhase.mode == PhaseMode.stimulation
+                ? IntensityMode.stimulation
+                : IntensityMode.expression,
+          };
         }
         break;
       case SessionMode.defaultMode:
@@ -2638,24 +2626,6 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                     child: _buildSessionModeButton(
                       AppLocalizations.of(context)!.defaultMode,
                       SessionMode.defaultMode,
-                    ),
-                  ),
-                  SizedBox(width: ResponsiveText.getSize(context, 8)),
-                  Expanded(
-                    child: _buildSessionModeButton(
-                      AppLocalizations.of(context)!.defaultMode,
-                      SessionMode.beginner,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: ResponsiveText.getSize(context, 8)),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildSessionModeButton(
-                      AppLocalizations.of(context)!.defaultMode,
-                      SessionMode.boostMilk,
                     ),
                   ),
                   SizedBox(width: ResponsiveText.getSize(context, 8)),

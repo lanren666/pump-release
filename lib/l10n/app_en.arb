@@ -287,6 +287,22 @@
   "@boostMilkFlow": {
     "description": "Boost milk mode button text"
   },
+  "boostMilkFlowTab": "Boost Milk Flow",
+  "@boostMilkFlowTab": {
+    "description": "Boost milk flow tab label on custom flow page"
+  },
+  "commonCustomFlows": "Common Custom Flows",
+  "@commonCustomFlows": {
+    "description": "Section label above custom flow tabs"
+  },
+  "customFlow1": "Custom Flow 1",
+  "@customFlow1": {
+    "description": "First custom flow tab label"
+  },
+  "customFlow2": "Custom Flow 2",
+  "@customFlow2": {
+    "description": "Second custom flow tab label"
+  },
   "customFlow": "Custom Flow",
   "@customFlow": {
     "description": "Custom flow button text"

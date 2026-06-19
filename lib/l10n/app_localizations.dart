@@ -482,6 +482,30 @@ abstract class AppLocalizations {
   /// **'Boost Milk'**
   String get boostMilkFlow;
 
+  /// Boost milk flow tab label on custom flow page
+  ///
+  /// In en, this message translates to:
+  /// **'Boost Milk Flow'**
+  String get boostMilkFlowTab;
+
+  /// Section label above custom flow tabs
+  ///
+  /// In en, this message translates to:
+  /// **'Common Custom Flows'**
+  String get commonCustomFlows;
+
+  /// First custom flow tab label
+  ///
+  /// In en, this message translates to:
+  /// **'Custom Flow 1'**
+  String get customFlow1;
+
+  /// Second custom flow tab label
+  ///
+  /// In en, this message translates to:
+  /// **'Custom Flow 2'**
+  String get customFlow2;
+
   /// Maximum label
   ///
   /// In en, this message translates to:

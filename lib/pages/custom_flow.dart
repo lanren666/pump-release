@@ -1,33 +1,11 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../config/app_color.dart';
 import '../config/responsive_text.dart';
 import '../services/database_service.dart';
-import '../models/setting.dart';
 import '../l10n/app_localizations.dart';
-
-enum PhaseMode { stimulation, expression }
-
-class Phase {
-  PhaseMode mode;
-  int duration; // 单位：分钟
-
-  Phase({required this.mode, required this.duration});
-
-  Map<String, dynamic> toJson() => {
-    'mode': mode == PhaseMode.stimulation ? 'stimulation' : 'expression',
-    'duration': duration,
-  };
-
-  factory Phase.fromJson(Map<String, dynamic> json) => Phase(
-    mode: json['mode'] == 'stimulation'
-        ? PhaseMode.stimulation
-        : PhaseMode.expression,
-    duration: json['duration'] as int,
-  );
-}
+import 'custom_flow_config.dart';
 
 class CustomFlowPage extends StatefulWidget {
   const CustomFlowPage({super.key});
@@ -37,40 +15,35 @@ class CustomFlowPage extends StatefulWidget {
 }
 
 class _CustomFlowPageState extends State<CustomFlowPage> {
-  static const String _settingKey = 'custom_flow_phases';
   static const int _maxPhases = 4;
   static const int _minPhases = 2;
   static const int _minPhaseDuration = 1;
   static const int _maxTotalMinutes = 30;
 
-  String _getSettingDesc(BuildContext context) {
-    return AppLocalizations.of(context)!.customFlowSettingDesc;
-  }
-
   final DatabaseService _dbService = DatabaseService();
+  CustomFlowTab _selectedTab = CustomFlowTab.boostMilk;
   List<Phase> _phases = [];
   bool _isLoading = true;
+
+  bool get _isReadOnly => _selectedTab == CustomFlowTab.boostMilk;
 
   @override
   void initState() {
     super.initState();
-    _loadPhases();
+    _loadData();
   }
 
   int get _totalMinutes =>
       _phases.fold(0, (sum, phase) => sum + phase.duration);
 
-  /// 除 [index] 外其它阶段时长之和。
   int _otherPhasesTotal(int index) =>
       _totalMinutes - _phases[index].duration;
 
-  /// 当前阶段在总时长上限内的最大可选分钟数。
   int _maxDurationForPhase(int index) {
     final remaining = _maxTotalMinutes - _otherPhasesTotal(index);
     return remaining.clamp(_minPhaseDuration, _maxTotalMinutes);
   }
 
-  /// 将各阶段时长收敛到总时长 ≤ 30 分钟（加载旧数据或联动调节后使用）。
   void _ensureTotalWithinLimit() {
     while (_totalMinutes > _maxTotalMinutes) {
       var reduced = false;
@@ -97,40 +70,65 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
     _ensureTotalWithinLimit();
   }
 
-  Future<void> _loadPhases() async {
-    final setting = await _dbService.getSettingByKey(_settingKey);
-    if (setting != null) {
-      final List<dynamic> jsonList = jsonDecode(setting.value);
-      _phases = jsonList.map((e) => Phase.fromJson(e)).toList();
-      final totalBefore = _totalMinutes;
+  Future<void> _loadData() async {
+    final selectedTab = await CustomFlowConfig.loadSelectedTab(_dbService);
+    var phases = await CustomFlowConfig.loadPhasesForTab(_dbService, selectedTab);
+    if (selectedTab != CustomFlowTab.boostMilk) {
+      final totalBefore = phases.fold(0, (sum, p) => sum + p.duration);
+      _phases = phases;
       _ensureTotalWithinLimit();
       if (totalBefore != _totalMinutes) {
-        await _savePhases();
+        await _saveCurrentTabPhases();
       }
     } else {
-      // 首次使用时的默认值
-      _phases = [
-        Phase(mode: PhaseMode.stimulation, duration: 2),
-        Phase(mode: PhaseMode.expression, duration: 15),
-      ];
+      _phases = phases;
     }
-    setState(() => _isLoading = false);
+    setState(() {
+      _selectedTab = selectedTab;
+      _isLoading = false;
+    });
+  }
+  Future<void> _saveCurrentTabPhases() async {
+    if (_isReadOnly) return;
+    if (!mounted) return;
+    await CustomFlowConfig.savePhasesForTab(
+      _dbService,
+      _selectedTab,
+      _phases,
+      desc: AppLocalizations.of(context)!.customFlowSettingDesc,
+    );
   }
 
-  Future<void> _savePhases() async {
-    final jsonValue = jsonEncode(_phases.map((p) => p.toJson()).toList());
-    final existing = await _dbService.getSettingByKey(_settingKey);
-    if (existing != null) {
-      await _dbService.updateSettingByKey(_settingKey, jsonValue);
-    } else {
-      if (!mounted) return;
-      await _dbService.insertSetting(
-        Setting(
-          key: _settingKey,
-          desc: _getSettingDesc(context),
-          value: jsonValue,
-        ),
-      );
+  Future<void> _persistSelectedTab() async {
+    await CustomFlowConfig.saveSelectedTab(_dbService, _selectedTab);
+  }
+
+  Future<void> _onTabSelected(CustomFlowTab tab) async {
+    if (tab == _selectedTab) return;
+    await _saveCurrentTabPhases();
+    final phases = await CustomFlowConfig.loadPhasesForTab(_dbService, tab);
+    await CustomFlowConfig.saveSelectedTab(_dbService, tab);
+    if (!mounted) return;
+    setState(() {
+      _selectedTab = tab;
+      _phases = phases;
+    });
+  }
+
+  Future<void> _onBack() async {
+    await _saveCurrentTabPhases();
+    await _persistSelectedTab();
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
+  String _tabLabel(CustomFlowTab tab, AppLocalizations l10n) {
+    switch (tab) {
+      case CustomFlowTab.boostMilk:
+        return l10n.boostMilkFlowTab;
+      case CustomFlowTab.custom1:
+        return l10n.customFlow1;
+      case CustomFlowTab.custom2:
+        return l10n.customFlow2;
     }
   }
 
@@ -181,6 +179,8 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
                       SizedBox(height: ResponsiveText.getSize(context, 4)),
                       _buildInstructionBox(),
                       SizedBox(height: ResponsiveText.getSize(context, 12)),
+                      _buildTabBar(),
+                      SizedBox(height: ResponsiveText.getSize(context, 12)),
                       ...List.generate(_phases.length, (index) {
                         return Padding(
                           padding: EdgeInsets.only(
@@ -189,12 +189,16 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
                           child: _buildPhaseCard(index),
                         );
                       }),
-                      SizedBox(height: ResponsiveText.getSize(context, 8)),
-                      _buildAddPhaseButton(),
+                      if (!_isReadOnly) ...[
+                        SizedBox(height: ResponsiveText.getSize(context, 8)),
+                        _buildAddPhaseButton(),
+                      ],
                       SizedBox(height: ResponsiveText.getSize(context, 12)),
                       _buildFlowSummary(),
-                      SizedBox(height: ResponsiveText.getSize(context, 8)),
-                      _buildSaveButton(),
+                      if (!_isReadOnly) ...[
+                        SizedBox(height: ResponsiveText.getSize(context, 8)),
+                        _buildSaveButton(),
+                      ],
                       SizedBox(height: ResponsiveText.getSize(context, 20)),
                     ],
                   ),
@@ -222,9 +226,7 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
         children: [
           IconButton(
             icon: const Icon(Icons.arrow_back, color: AppColor.white),
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
+            onPressed: _onBack,
           ),
           Text(
             AppLocalizations.of(context)!.customFlow,
@@ -235,6 +237,79 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTabBar() {
+    final l10n = AppLocalizations.of(context)!;
+    final tabs = CustomFlowTab.values;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.commonCustomFlows,
+          style: ResponsiveText.bodySmall(
+            context,
+            color: AppColor.textSecondary,
+          ),
+        ),
+        SizedBox(height: ResponsiveText.getSize(context, 8)),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (int i = 0; i < tabs.length; i++) ...[
+                if (i > 0) SizedBox(width: ResponsiveText.getSize(context, 8)),
+                _buildTabChip(tabs[i], l10n),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTabChip(CustomFlowTab tab, AppLocalizations l10n) {
+    final isSelected = _selectedTab == tab;
+    return InkWell(
+      onTap: () => _onTabSelected(tab),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: ResponsiveText.symmetric(context, horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColor.primaryPurple : AppColor.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected
+                ? Colors.transparent
+                : Colors.grey.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Text(
+          _tabLabel(tab, l10n),
+          style: ResponsiveText.bodySmall(
+            context,
+            fontWeight: FontWeight.w500,
+            color: isSelected ? AppColor.white : AppColor.textPrimary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInstructionBox() {
+    return Container(
+      width: double.infinity,
+      padding: ResponsiveText.padding(context, all: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDF7E4),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+      ),
+      child: Text(
+        AppLocalizations.of(context)!.customFlowInstruction,
+        style: ResponsiveText.body(context, color: const Color(0xFF6B6B6B)),
       ),
     );
   }
@@ -256,22 +331,6 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
               color: AppColor.primaryPurple,
             ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildInstructionBox() {
-    return Container(
-      width: double.infinity,
-      padding: ResponsiveText.padding(context, all: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFDF7E4),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
-      ),
-      child: Text(
-        AppLocalizations.of(context)!.customFlowInstruction,
-        style: ResponsiveText.body(context, color: const Color(0xFF6B6B6B)),
       ),
     );
   }
@@ -412,38 +471,42 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
                                             ),
                                           ];
                                         },
-                                    onChanged: (PhaseMode? newValue) {
-                                      if (newValue != null) {
-                                        setState(() {
-                                          _phases[index].mode = newValue;
-                                        });
-                                      }
-                                    },
+                                    onChanged: _isReadOnly
+                                        ? null
+                                        : (PhaseMode? newValue) {
+                                            if (newValue != null) {
+                                              setState(() {
+                                                _phases[index].mode = newValue;
+                                              });
+                                            }
+                                          },
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                          SizedBox(width: ResponsiveText.getSize(context, 8)),
-                          IconButton(
-                            icon: Icon(
-                              size: ResponsiveText.getSize(context, 20),
-                              Symbols.delete,
-                              weight: 800,
-                              color: _phases.length > _minPhases
-                                  ? Colors.red
-                                  : Colors.grey,
+                          if (!_isReadOnly) ...[
+                            SizedBox(width: ResponsiveText.getSize(context, 8)),
+                            IconButton(
+                              icon: Icon(
+                                size: ResponsiveText.getSize(context, 20),
+                                Symbols.delete,
+                                weight: 800,
+                                color: _phases.length > _minPhases
+                                    ? Colors.red
+                                    : Colors.grey,
+                              ),
+                              onPressed: _phases.length > _minPhases
+                                  ? () {
+                                      setState(() {
+                                        _phases.removeAt(index);
+                                      });
+                                    }
+                                  : null,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
                             ),
-                            onPressed: _phases.length > _minPhases
-                                ? () {
-                                    setState(() {
-                                      _phases.removeAt(index);
-                                    });
-                                  }
-                                : null,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
+                          ],
                         ],
                       ),
                     ),
@@ -519,13 +582,13 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
                     min: minForPhase,
                     max: maxForPhase.toDouble(),
                     divisions: span > 0 ? span : null,
-                    onChanged: span > 0
-                        ? (double value) {
+                    onChanged: _isReadOnly || span <= 0
+                        ? null
+                        : (double value) {
                             setState(() {
                               _setPhaseDuration(index, value.round());
                             });
-                          }
-                        : null,
+                          },
                   );
                 },
               ),
@@ -621,7 +684,7 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
     return Container(
       padding: ResponsiveText.padding(context, all: 16),
       decoration: BoxDecoration(
-        color: Color(0xFFF9FAFB),
+        color: const Color(0xFFF9FAFB),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
       ),
@@ -699,7 +762,8 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
                   );
                   return;
                 }
-                await _savePhases();
+                await _saveCurrentTabPhases();
+                await _persistSelectedTab();
                 if (mounted) Navigator.of(context).pop(true);
               },
         style: ElevatedButton.styleFrom(

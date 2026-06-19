@@ -224,6 +224,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get boostMilkFlow => 'Boost Milk';
 
   @override
+  String get boostMilkFlowTab => 'Boost Milk Flow';
+
+  @override
+  String get commonCustomFlows => 'Common Custom Flows';
+
+  @override
+  String get customFlow1 => 'Custom Flow 1';
+
+  @override
+  String get customFlow2 => 'Custom Flow 2';
+
+  @override
   String get max => 'Max:';
 
   @override

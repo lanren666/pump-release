@@ -212,6 +212,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get boostMilkFlow => '追奶模式';
 
   @override
+  String get boostMilkFlowTab => '追奶流程';
+
+  @override
+  String get commonCustomFlows => '常用自定义流程';
+
+  @override
+  String get customFlow1 => '自定义流程1';
+
+  @override
+  String get customFlow2 => '自定义流程2';
+
+  @override
   String get max => '最大：';
 
   @override
