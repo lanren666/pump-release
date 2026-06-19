@@ -72,6 +72,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get systemSettings => '系统设置';
 
   @override
+  String get helpAndAbout => '帮助与关于';
+
+  @override
   String get deviceSideSettings => '吸奶器单边设置';
 
   @override

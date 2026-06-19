@@ -85,6 +85,10 @@
   "@systemSettings": {
     "description": "Title for system settings page"
   },
+  "helpAndAbout": "Help & About",
+  "@helpAndAbout": {
+    "description": "Title for help and about page"
+  },
   "deviceSideSettings": "Device Side Settings",
   "@deviceSideSettings": {
     "description": "Title for device side settings section"

@@ -218,6 +218,12 @@ abstract class AppLocalizations {
   /// **'System Settings'**
   String get systemSettings;
 
+  /// Title for help and about page
+  ///
+  /// In en, this message translates to:
+  /// **'Help & About'**
+  String get helpAndAbout;
+
   /// Title for device side settings section
   ///
   /// In en, this message translates to:

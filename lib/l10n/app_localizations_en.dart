@@ -76,6 +76,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get systemSettings => 'System Settings';
 
   @override
+  String get helpAndAbout => 'Help & About';
+
+  @override
   String get deviceSideSettings => 'Device Side Settings';
 
   @override

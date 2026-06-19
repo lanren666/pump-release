@@ -12,6 +12,7 @@ import 'custom_flow.dart';
 import 'home.dart';
 import 'settings.dart';
 import 'system_settings.dart';
+import 'help_about.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../services/tuya/dp_constants.dart';
 import '../services/tuya/ble_dp_service.dart';
@@ -4008,6 +4009,40 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                                 )
                                 .then((_) {
                                   _loadDevices();
+                                  if (mounted) {
+                                    setState(() {
+                                      _isClosingForDeviceSettings = false;
+                                      _isMenuOpen = false;
+                                    });
+                                  }
+                                });
+                          }
+                        },
+                      ),
+                      SizedBox(height: ResponsiveText.getSize(context, 8)),
+                      _buildMenuItem(
+                        icon: Icons.help_outline,
+                        title: AppLocalizations.of(context)!.helpAndAbout,
+                        onTap: () {
+                          setState(() {
+                            _isClosingForDeviceSettings = true;
+                            _isMenuOpen = false;
+                          });
+                          if (mounted) {
+                            Navigator.of(context)
+                                .push(
+                                  PageRouteBuilder(
+                                    pageBuilder:
+                                        (
+                                          context,
+                                          animation,
+                                          secondaryAnimation,
+                                        ) => const HelpAboutPage(),
+                                    transitionDuration: Duration.zero,
+                                    reverseTransitionDuration: Duration.zero,
+                                  ),
+                                )
+                                .then((_) {
                                   if (mounted) {
                                     setState(() {
                                       _isClosingForDeviceSettings = false;
