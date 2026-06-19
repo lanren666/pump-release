@@ -18,6 +18,7 @@ class UnifiedTimerCard extends StatelessWidget {
     required this.elapsedTimeInPhase,
     required this.maxDuration,
     this.deviceMaxDuration,
+    this.showHybridDisplay = false,
   });
 
   final IntensityMode displayMode;
@@ -30,6 +31,7 @@ class UnifiedTimerCard extends StatelessWidget {
   final Duration elapsedTimeInPhase;
   final int maxDuration;
   final int? deviceMaxDuration;
+  final bool showHybridDisplay;
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +51,14 @@ class UnifiedTimerCard extends StatelessWidget {
         ? (deviceMaxDuration ?? maxDuration)
         : maxDuration;
     final l10n = AppLocalizations.of(context)!;
+    final modeLabel = showHybridDisplay
+        ? l10n.hybrid
+        : displayMode == IntensityMode.stimulation
+        ? l10n.stimulation
+        : l10n.expression;
+    final maxLine =
+        '${l10n.max.replaceAll(RegExp(r':'), '')} '
+        '$effectiveMaxDuration${l10n.minutes}';
 
     return Container(
       key: const Key('unified_timer_card'),
@@ -89,9 +99,7 @@ class UnifiedTimerCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  displayMode == IntensityMode.stimulation
-                      ? l10n.stimulation
-                      : l10n.expression,
+                  modeLabel,
                   style: ResponsiveText.caption(
                     context,
                     fontWeight: FontWeight.w500,
@@ -113,11 +121,12 @@ class UnifiedTimerCard extends StatelessWidget {
           ),
           Center(
             child: Text(
-              '${l10n.phase} $currentPhase/$effectiveTotalPhases: '
-              '$phaseElapsedMinutes:$phaseElapsedSeconds / '
-              '$effectivePhaseMinutes:$effectivePhaseSeconds | '
-              '${l10n.max.replaceAll(RegExp(r':'), '')} '
-              '$effectiveMaxDuration${l10n.minutes}',
+              showHybridDisplay
+                  ? maxLine
+                  : '${l10n.phase} $currentPhase/$effectiveTotalPhases: '
+                        '$phaseElapsedMinutes:$phaseElapsedSeconds / '
+                        '$effectivePhaseMinutes:$effectivePhaseSeconds | '
+                        '$maxLine',
               key: const Key('unified_timer_phase_line'),
               style: ResponsiveText.bodySmall(
                 context,

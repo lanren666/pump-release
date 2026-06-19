@@ -22,6 +22,7 @@ import '../services/tuya/dp_change_handle.dart';
 import '../config/app_config.dart';
 import '../config/ble_channels.dart';
 import 'control_timer_display_logic.dart';
+import 'control_hybrid_pattern_logic.dart';
 import 'control_types.dart';
 import 'widgets/unified_timer_card.dart';
 import 'widgets/low_battery_dialog.dart';
@@ -1826,6 +1827,43 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _applyHybridPatternChange(bool value) async {
+    setState(() => _setCurrentHybridPattern(value));
+
+    final persistPlan = ControlHybridPatternLogic.persistPlan(_selectedPump);
+    if (persistPlan.persistLeft) {
+      await _persistHybridPattern(_keyLeftHybridPattern, value);
+    }
+    if (persistPlan.persistRight) {
+      await _persistHybridPattern(_keyRightHybridPattern, value);
+    }
+
+    final publishPlan = ControlHybridPatternLogic.publishPlan(
+      selectedPump: _selectedPump,
+      sessionHasStarted: _getCurrentHasStarted(),
+    );
+    if (!publishPlan.publishLeft && !publishPlan.publishRight) {
+      return;
+    }
+
+    if (publishPlan.publishLeft && _leftDevice != null) {
+      _recordUserHybridPatternOperation(
+        _leftDevice,
+        DpConstants.stimulationHybrid,
+        value,
+      );
+    }
+    if (publishPlan.publishRight && _rightDevice != null) {
+      _recordUserHybridPatternOperation(
+        _rightDevice,
+        DpConstants.stimulationHybrid,
+        value,
+      );
+    }
+
+    _publishDpToDevices(DpConstants.stimulationHybrid, value);
+  }
+
   bool _getCurrentIsRunning() {
     switch (_selectedPump) {
       case PumpSelection.left:
@@ -1989,6 +2027,10 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     final displayMode = await _getDisplayIntensityMode();
     return {'totalPhases': totalPhases, 'displayMode': displayMode};
   }
+
+  /// Timer card shows hybrid whenever the hybrid switch is on, matching DP/session
+  /// behavior (no stimulation-phase gate).
+  bool _shouldShowHybridTimerDisplay() => _getCurrentHybridPattern();
 
   @override
   Widget build(BuildContext context) {
@@ -2832,6 +2874,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
               elapsedTimeInPhase: _elapsedTimeInPhase,
               maxDuration: _maxDuration,
               deviceMaxDuration: _deviceMaxDuration,
+              showHybridDisplay: _shouldShowHybridTimerDisplay(),
             );
           },
         );
@@ -2908,9 +2951,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   Widget _buildIntensityModuleBoth({required bool isLeft}) {
     // final intensityMode = isLeft ? _leftIntensityMode : _rightIntensityMode;
     final suctionLevel = isLeft ? _getLeftSuctionLevel() : _getRightSuctionLevel();
-    final hybridPatternEnabled = isLeft ? _leftHybridPatternEnabled : _rightHybridPatternEnabled;
-    final hasStarted = isLeft ? _leftHasStarted : _rightHasStarted;
-    final device = isLeft ? _leftDevice : _rightDevice;
+    final hybridPatternEnabled = _getCurrentHybridPattern();
 
     return Container(
       padding: ResponsiveText.padding(
@@ -3064,37 +3105,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                   child: Switch(
                     value: hybridPatternEnabled,
                     onChanged: (bool value) async {
-                      setState(() {
-                        if (isLeft) {
-                          _leftHybridPatternEnabled = value;
-                        } else {
-                          _rightHybridPatternEnabled = value;
-                        }
-                      });
-                      // 与 suctionlevel 一致：页面操作后持久化到数据库
-                      if (isLeft) {
-                        _persistHybridPattern(_keyLeftHybridPattern, value);
-                      } else {
-                        _persistHybridPattern(_keyRightHybridPattern, value);
-                      }
-
-                      if (hasStarted && device != null) {
-                        _recordUserHybridPatternOperation(device, DpConstants.stimulationHybrid, value);
-                        // 跟硬件配合 固定只发刺激模式
-                        BleDpService.publishDp(
-                          device.bluetoothId,
-                          DpConstants.stimulationHybrid,
-                          value,
-                        );
-                        // // 暂停500ms
-                        // await Future.delayed(const Duration(milliseconds: 500));
-                        // BleDpService.publishDps(
-                        //   device.bluetoothId,
-                        //   [
-                        //     DpData(dpId: DpConstants.expressionHybrid, value: value)
-                        //   ],
-                        // );
-                      }
+                      await _applyHybridPatternChange(value);
                     },
                   ),
                 ),
@@ -3353,30 +3364,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                   child: Switch(
                     value: _getCurrentHybridPattern(),
                     onChanged: (bool value) async {
-                      setState(() {
-                        _setCurrentHybridPattern(value);
-                      });
-                      // 与 suctionlevel 一致：页面操作后持久化到数据库
-                      if (_selectedPump == PumpSelection.left) {
-                        _persistHybridPattern(_keyLeftHybridPattern, value);
-                      } else if (_selectedPump == PumpSelection.right) {
-                        _persistHybridPattern(_keyRightHybridPattern, value);
-                      } else {
-                        _persistHybridPattern(_keyLeftHybridPattern, value);
-                        _persistHybridPattern(_keyRightHybridPattern, value);
-                      }
-
-                      final currentHasStarted = _getCurrentHasStarted();
-                      if (currentHasStarted) {
-                        if (_leftDevice != null && (_selectedPump == PumpSelection.left || _selectedPump == PumpSelection.both)) {
-                          _recordUserHybridPatternOperation(_leftDevice, DpConstants.stimulationHybrid, value);
-                        }
-                        if (_rightDevice != null && (_selectedPump == PumpSelection.right || _selectedPump == PumpSelection.both)) {
-                          _recordUserHybridPatternOperation(_rightDevice, DpConstants.stimulationHybrid, value);
-                        }
-                        // 跟硬件配合：固定只发刺激模式 107
-                        _publishDpToDevices(DpConstants.stimulationHybrid, value);
-                      }
+                      await _applyHybridPatternChange(value);
                     },
                   ),
                 ),
@@ -3613,7 +3601,6 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                                   _rightStimulationSuctionLevel.toInt();
                               final rightExpressionSucLvl =
                                   _rightExpressionSuctionLevel.toInt();
-                              final hybridPattern = _getCurrentHybridPattern();
                               // 并发执行两个设备的配置下发，左右各自使用各自的吸力
                               final futures = <Future>[];
                               if (_leftDevice != null) {
@@ -3625,8 +3612,8 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                                     totalPhase,
                                     leftStimulationSucLvl,
                                     leftExpressionSucLvl,
-                                    hybridPattern,
-                                    hybridPattern,
+                                    _leftHybridPatternEnabled,
+                                    _leftHybridPatternEnabled,
                                     modeDurations,
                                   ),
                                 );
@@ -3640,8 +3627,8 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                                     totalPhase,
                                     rightStimulationSucLvl,
                                     rightExpressionSucLvl,
-                                    hybridPattern,
-                                    hybridPattern,
+                                    _rightHybridPatternEnabled,
+                                    _rightHybridPatternEnabled,
                                     modeDurations,
                                   ),
                                 );

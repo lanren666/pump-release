@@ -80,6 +80,89 @@ void main() {
       expect(find.textContaining('Max 30min'), findsOneWidget);
     });
 
+    testWidgets('shows hybrid badge and max-only line when hybrid is on', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          const UnifiedTimerCard(
+            displayMode: IntensityMode.stimulation,
+            displayMinutes: '01',
+            displaySeconds: '24',
+            currentPhase: 1,
+            effectiveTotalPhases: 2,
+            currentHasStarted: true,
+            effectivePhaseDuration: Duration(minutes: 2),
+            elapsedTimeInPhase: Duration(minutes: 1, seconds: 24),
+            maxDuration: 20,
+            showHybridDisplay: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('01:24'), findsOneWidget);
+      expect(find.text('Hybrid'), findsOneWidget);
+      expect(find.textContaining('Phase'), findsNothing);
+      expect(find.textContaining('Max 20min'), findsOneWidget);
+      expect(find.text('Stimulation'), findsNothing);
+    });
+
+    testWidgets(
+      'shows hybrid badge and hides phase line even in expression displayMode',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            const UnifiedTimerCard(
+              displayMode: IntensityMode.expression,
+              displayMinutes: '08',
+              displaySeconds: '10',
+              currentPhase: 2,
+              effectiveTotalPhases: 2,
+              currentHasStarted: true,
+              effectivePhaseDuration: Duration(minutes: 15),
+              elapsedTimeInPhase: Duration(minutes: 5),
+              maxDuration: 20,
+              showHybridDisplay: true,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Hybrid'), findsOneWidget);
+        expect(find.text('Expression'), findsNothing);
+        expect(find.textContaining('Phase'), findsNothing);
+        expect(find.textContaining('Max 20min'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'shows expression badge and phase line when hybrid switch is off',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            const UnifiedTimerCard(
+              displayMode: IntensityMode.expression,
+              displayMinutes: '08',
+              displaySeconds: '10',
+              currentPhase: 2,
+              effectiveTotalPhases: 2,
+              currentHasStarted: true,
+              effectivePhaseDuration: Duration(minutes: 15),
+              elapsedTimeInPhase: Duration(minutes: 5),
+              maxDuration: 20,
+              showHybridDisplay: false,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Expression'), findsOneWidget);
+        expect(find.text('Hybrid'), findsNothing);
+        expect(find.textContaining('Phase 2/2'), findsOneWidget);
+      },
+    );
+
     testWidgets('renders exactly one unified card (not dual side-by-side)', (
       tester,
     ) async {
