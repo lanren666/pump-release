@@ -55,28 +55,9 @@ extension Date {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        // 关键修复：先让 FlutterAppDelegate 完全初始化，不要在这里初始化第三方 SDK
-        // 这可以避免干扰 Flutter 引擎的内存保护机制
+        // FlutterAppDelegate 已在 super.application 内完成插件注册；切勿重复调用
+        // GeneratedPluginRegistrant.register，否则二次冷启动会在 PathProviderPlugin 等处 SIGSEGV。
         let result = super.application(application, didFinishLaunchingWithOptions: launchOptions)
-
-        // 确保插件已注册（FlutterAppDelegate 应该自动处理，但为了确保，我们显式注册）
-        // 延迟注册以确保 Flutter 引擎完全初始化
-        DispatchQueue.main.async { [weak self] in
-            if let controller = self?.window?.rootViewController as? FlutterViewController {
-                let engine = controller.engine
-                GeneratedPluginRegistrant.register(with: engine)
-                print("✅ 插件已注册")
-            } else {
-                // 如果 FlutterViewController 还没准备好，稍后重试
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                    if let controller = self?.window?.rootViewController as? FlutterViewController {
-                        let engine = controller.engine
-                        GeneratedPluginRegistrant.register(with: engine)
-                        print("✅ 插件已注册（延迟）")
-                    }
-                }
-            }
-        }
 
         // 初始化 CBCentralManager（需要 delegate 来获取状态更新）
         centralManager = CBCentralManager(delegate: self, queue: nil)
