@@ -246,6 +246,7 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
               isRunning: device.isRunning,
               isOnline: isOnline,
             )) {
+              OfflineStreakTracker.reset(device.bluetoothId);
               await DeviceListenerService.registerIfRunning(device);
               continue;
             }
@@ -254,8 +255,23 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
               isRunning: device.isRunning,
               isOnline: isOnline,
             )) {
+              final streak =
+                  OfflineStreakTracker.recordOffline(device.bluetoothId);
+              if (!OfflineStreakTracker.isConfirmedOffline(
+                device.bluetoothId,
+              )) {
+                debugPrint(
+                  '设备离线探测 $streak/${OfflineStreakTracker.confirmThreshold}，'
+                  '暂不改 isRunning: devId=${device.devId}, '
+                  'bluetoothId=${device.bluetoothId}',
+                );
+                continue;
+              }
+
+              OfflineStreakTracker.reset(device.bluetoothId);
               debugPrint(
-                '设备标记运行中但已离线，纠正 isRunning: devId=${device.devId}, bluetoothId=${device.bluetoothId}',
+                '设备持续离线，纠正 isRunning: devId=${device.devId}, '
+                'bluetoothId=${device.bluetoothId}',
               );
               await _updateDeviceRunningStatus(device.devId!, false);
               shouldReconnect = true;
@@ -285,6 +301,7 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
               false;
 
           if (isOnline) {
+            OfflineStreakTracker.reset(device.bluetoothId);
             debugPrint('设备已在线，更新状态并注册监听器: ${device.devId}');
             await _updateDeviceRunningStatus(device.devId!, true);
 
@@ -314,6 +331,7 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
             await _updateDeviceRunningStatus(device.devId!, connected);
 
             if (connected) {
+              OfflineStreakTracker.reset(device.bluetoothId);
               debugPrint('设备重连成功: ${device.devId}');
               await DeviceListenerService.registerIfRunning(
                 device.copyWith(isRunning: true),

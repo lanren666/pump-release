@@ -60,4 +60,33 @@ void main() {
       );
     });
   });
+
+  group('OfflineStreakTracker', () {
+    setUp(OfflineStreakTracker.clearAll);
+
+    test('requires two consecutive offline probes (~6s at 3s poll)', () {
+      const id = 'ble-1';
+      expect(OfflineStreakTracker.confirmThreshold, 2);
+      expect(OfflineStreakTracker.recordOffline(id), 1);
+      expect(OfflineStreakTracker.isConfirmedOffline(id), isFalse);
+      expect(OfflineStreakTracker.recordOffline(id), 2);
+      expect(OfflineStreakTracker.isConfirmedOffline(id), isTrue);
+    });
+
+    test('reset clears streak after device comes back online', () {
+      const id = 'ble-2';
+      OfflineStreakTracker.recordOffline(id);
+      OfflineStreakTracker.reset(id);
+      expect(OfflineStreakTracker.isConfirmedOffline(id), isFalse);
+      expect(OfflineStreakTracker.recordOffline(id), 1);
+    });
+
+    test('streak restarts after intermittent offline-online-offline', () {
+      const id = 'ble-3';
+      OfflineStreakTracker.recordOffline(id);
+      OfflineStreakTracker.reset(id);
+      expect(OfflineStreakTracker.recordOffline(id), 1);
+      expect(OfflineStreakTracker.isConfirmedOffline(id), isFalse);
+    });
+  });
 }
