@@ -9,19 +9,24 @@ class DeviceListenerService {
   const DeviceListenerService._();
 
   /// On iOS, [registerDeviceListener] expects bluetoothId (uuid), not Tuya devId.
-  static Future<bool> registerIfRunning(ConnectedDevice device) async {
+  static Future<bool> registerIfRunning(
+    ConnectedDevice device, {
+    bool bypassOnlineCheck = false,
+  }) async {
     if (!AppConfig.tuyaEnabled) return false;
     if (!device.isRunning) return false;
     if (device.bluetoothId.isEmpty) return false;
 
     try {
-      final isOnline =
-          await connectionChannel.invokeMethod('isDeviceOnline', {
-                'deviceId': device.bluetoothId,
-              })
-              as bool? ??
-          false;
-      if (!isOnline) return false;
+      if (!bypassOnlineCheck) {
+        final isOnline =
+            await connectionChannel.invokeMethod('isDeviceOnline', {
+                  'deviceId': device.bluetoothId,
+                })
+                as bool? ??
+            false;
+        if (!isOnline) return false;
+      }
 
       await connectionChannel.invokeMethod('registerDeviceListener', {
         'deviceId': device.bluetoothId,

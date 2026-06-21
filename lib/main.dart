@@ -255,6 +255,18 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
               isRunning: device.isRunning,
               isOnline: isOnline,
             )) {
+              if (DeviceReconnectPolicy.shouldSuppressRunningFalse(
+                devId: device.devId!,
+                isOnline: isOnline,
+              )) {
+                OfflineStreakTracker.reset(device.bluetoothId);
+                await DeviceListenerService.registerIfRunning(
+                  device,
+                  bypassOnlineCheck: true,
+                );
+                continue;
+              }
+
               final streak =
                   OfflineStreakTracker.recordOffline(device.bluetoothId);
               if (!OfflineStreakTracker.isConfirmedOffline(
@@ -289,6 +301,19 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
         debugPrint(
           '发现未运行的设备，尝试重连: ${device.name} (devId: ${device.devId}, bluetoothId: ${device.bluetoothId})',
         );
+
+        if (DeviceReconnectPolicy.shouldHealRunningFromDp(
+          devId: device.devId!,
+        )) {
+          OfflineStreakTracker.reset(device.bluetoothId);
+          debugPrint('DP105 近期活跃，恢复连接状态: devId=${device.devId}');
+          await _updateDeviceRunningStatus(device.devId!, true);
+          await DeviceListenerService.registerIfRunning(
+            device.copyWith(isRunning: true),
+            bypassOnlineCheck: true,
+          );
+          continue;
+        }
 
         // 先检查是否已经在线
         try {
@@ -328,13 +353,24 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
                 connectionResults[device.bluetoothId] as bool? ?? false;
             debugPrint('设备连接结果: ${device.bluetoothId} -> $connected');
 
-            await _updateDeviceRunningStatus(device.devId!, connected);
-
             if (connected) {
               OfflineStreakTracker.reset(device.bluetoothId);
+              await _updateDeviceRunningStatus(device.devId!, true);
               debugPrint('设备重连成功: ${device.devId}');
               await DeviceListenerService.registerIfRunning(
                 device.copyWith(isRunning: true),
+              );
+            } else if (DeviceReconnectPolicy.shouldHealRunningFromDp(
+              devId: device.devId!,
+            )) {
+              OfflineStreakTracker.reset(device.bluetoothId);
+              debugPrint(
+                '重连失败但 DP105 仍活跃，恢复 isRunning: ${device.devId}',
+              );
+              await _updateDeviceRunningStatus(device.devId!, true);
+              await DeviceListenerService.registerIfRunning(
+                device.copyWith(isRunning: true),
+                bypassOnlineCheck: true,
               );
             } else {
               debugPrint('设备重连失败: ${device.devId}');

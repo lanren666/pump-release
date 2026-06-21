@@ -15,6 +15,7 @@ import '../services/database_service.dart';
 import '../services/tuya/ble_dp_service.dart';
 import '../services/tuya/dp_constants.dart';
 import '../services/tuya/device_listener_service.dart';
+import '../services/tuya/device_reconnect_policy.dart';
 import '../l10n/app_localizations.dart';
 import '../services/diagnostics/app_logger.dart';
 import '../services/battery/battery_alert_logic.dart';
@@ -363,10 +364,7 @@ class _HomePageState extends State<HomePage>
                 final status = eventData['status'] as bool?;
 
                 if (devId != null && status != null) {
-                  debugPrint(
-                    '🧭 isRunning 更新来源=networkStatusChanged: devId=$devId, status=$status',
-                  );
-                  _updateDeviceRunningStatus(devId, status);
+                  unawaited(_handleNetworkStatusChanged(devId, status));
                 }
               }
             } catch (e) {
@@ -426,6 +424,54 @@ class _HomePageState extends State<HomePage>
       if (i < 2) {
         await Future.delayed(const Duration(seconds: 1));
       }
+    }
+  }
+
+  Future<void> _handleNetworkStatusChanged(String devId, bool online) async {
+    try {
+      final device = await _dbService.getDeviceByDevId(devId);
+      if (device == null || !device.isRemembered) {
+        return;
+      }
+
+      if (online) {
+        NetworkStatusRunningPolicy.onOnline(device.bluetoothId);
+        debugPrint(
+          '🧭 isRunning 更新来源=networkStatusChanged(online): devId=$devId',
+        );
+        await _updateDeviceRunningStatus(devId, true);
+        return;
+      }
+
+      if (!NetworkStatusRunningPolicy.shouldApplyRunningFalse(
+        dbIsRunning: device.isRunning,
+        bluetoothId: device.bluetoothId,
+      )) {
+        final streak = OfflineStreakTracker.currentStreak(device.bluetoothId);
+        debugPrint(
+          'networkStatusChanged 离线 $streak/'
+          '${OfflineStreakTracker.confirmThreshold}，暂不改 isRunning: '
+          'devId=$devId, bluetoothId=${device.bluetoothId}',
+        );
+        return;
+      }
+
+      if (DeviceReconnectPolicy.shouldSuppressRunningFalse(
+        devId: devId,
+        isOnline: false,
+      )) {
+        debugPrint(
+          'networkStatusChanged 确认离线但 DP105 仍活跃，暂不改 isRunning: devId=$devId',
+        );
+        return;
+      }
+
+      debugPrint(
+        '🧭 isRunning 更新来源=networkStatusChanged(确认离线): devId=$devId',
+      );
+      await _updateDeviceRunningStatus(devId, false);
+    } catch (e) {
+      debugPrint('❌ 处理 networkStatusChanged 失败: $e');
     }
   }
 

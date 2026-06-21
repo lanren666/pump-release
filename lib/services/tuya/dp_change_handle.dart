@@ -5,6 +5,7 @@ import '../diagnostics/app_logger.dart';
 import 'dp_constants.dart';
 import 'session_setting_parser.dart';
 import 'ble_dp_service.dart';
+import 'device_reconnect_policy.dart';
 
 // SessionStatus 更新数据
 class SessionStatusUpdate {
@@ -196,6 +197,8 @@ class DpChangeHandle {
             'mode=${parsedStatus['sessionModeName']}'
             '${parsedStatus['batVolt'] != null ? ' batVolt=${parsedStatus['batVolt']}' : ''}',
           );
+
+          DpAliveTracker.touch(deviceId);
 
           _sessionStatusController.add(
             SessionStatusUpdate(deviceId: deviceId, status: parsedStatus),

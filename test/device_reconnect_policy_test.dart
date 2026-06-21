@@ -89,4 +89,129 @@ void main() {
       expect(OfflineStreakTracker.isConfirmedOffline(id), isFalse);
     });
   });
+
+  group('NetworkStatusRunningPolicy', () {
+    setUp(OfflineStreakTracker.clearAll);
+
+    test('online resets streak and offline does not apply when not running', () {
+      const id = 'ble-net-1';
+      OfflineStreakTracker.recordOffline(id);
+      NetworkStatusRunningPolicy.onOnline(id);
+      expect(OfflineStreakTracker.currentStreak(id), 0);
+      expect(
+        NetworkStatusRunningPolicy.shouldApplyRunningFalse(
+          dbIsRunning: false,
+          bluetoothId: id,
+        ),
+        isFalse,
+      );
+    });
+
+    test('single offline network event does not apply running false', () {
+      const id = 'ble-net-2';
+      expect(
+        NetworkStatusRunningPolicy.shouldApplyRunningFalse(
+          dbIsRunning: true,
+          bluetoothId: id,
+        ),
+        isFalse,
+      );
+      expect(OfflineStreakTracker.currentStreak(id), 1);
+    });
+
+    test('second offline signal confirms running false', () {
+      const id = 'ble-net-3';
+      NetworkStatusRunningPolicy.shouldApplyRunningFalse(
+        dbIsRunning: true,
+        bluetoothId: id,
+      );
+      expect(
+        NetworkStatusRunningPolicy.shouldApplyRunningFalse(
+          dbIsRunning: true,
+          bluetoothId: id,
+        ),
+        isTrue,
+      );
+      expect(OfflineStreakTracker.currentStreak(id), 0);
+    });
+
+    test('online between offline signals restarts streak', () {
+      const id = 'ble-net-4';
+      NetworkStatusRunningPolicy.shouldApplyRunningFalse(
+        dbIsRunning: true,
+        bluetoothId: id,
+      );
+      NetworkStatusRunningPolicy.onOnline(id);
+      expect(
+        NetworkStatusRunningPolicy.shouldApplyRunningFalse(
+          dbIsRunning: true,
+          bluetoothId: id,
+        ),
+        isFalse,
+      );
+    });
+
+    test('poll and network callbacks share the same streak counter', () {
+      const id = 'ble-net-5';
+      OfflineStreakTracker.recordOffline(id);
+      expect(
+        NetworkStatusRunningPolicy.shouldApplyRunningFalse(
+          dbIsRunning: true,
+          bluetoothId: id,
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  group('DpAliveTracker', () {
+    setUp(DpAliveTracker.clearAll);
+
+    test('recent DP105 suppresses running false downgrade', () {
+      const devId = 'dev-1';
+      DpAliveTracker.touch(devId);
+      expect(
+        DeviceReconnectPolicy.shouldSuppressRunningFalse(
+          devId: devId,
+          isOnline: false,
+        ),
+        isTrue,
+      );
+      expect(
+        DeviceReconnectPolicy.shouldHealRunningFromDp(devId: devId),
+        isTrue,
+      );
+    });
+
+    test('suppress does not apply when native probe says online', () {
+      const devId = 'dev-2';
+      DpAliveTracker.touch(devId);
+      expect(
+        DeviceReconnectPolicy.shouldSuppressRunningFalse(
+          devId: devId,
+          isOnline: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('touch marks devId as recently alive', () {
+      const devId = 'dev-3';
+      expect(DpAliveTracker.isRecentlyAlive(devId), isFalse);
+      DpAliveTracker.touch(devId);
+      expect(DpAliveTracker.isRecentlyAlive(devId), isTrue);
+      expect(
+        DeviceReconnectPolicy.shouldHealRunningFromDp(devId: devId),
+        isTrue,
+      );
+    });
+
+    test('unknown devId is not recently alive', () {
+      expect(DpAliveTracker.isRecentlyAlive(''), isFalse);
+      expect(
+        DeviceReconnectPolicy.shouldHealRunningFromDp(devId: 'missing'),
+        isFalse,
+      );
+    });
+  });
 }

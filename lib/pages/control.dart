@@ -19,6 +19,7 @@ import '../services/tuya/dp_constants.dart';
 import '../services/tuya/ble_dp_service.dart';
 import '../services/tuya/ble_types.dart';
 import '../services/tuya/dp_change_handle.dart';
+import '../services/tuya/device_reconnect_policy.dart';
 import '../config/app_config.dart';
 import '../config/ble_channels.dart';
 import 'control_timer_display_logic.dart';
@@ -1220,24 +1221,37 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
 
     var connected = false;
     try {
-      final isOnline =
-          await connectionChannel.invokeMethod('isDeviceOnline', {
-                'deviceId': device.bluetoothId,
-              })
-              as bool? ??
-          false;
-
-      if (isOnline) {
+      if (device.devId != null &&
+          DeviceReconnectPolicy.shouldHealRunningFromDp(devId: device.devId!)) {
         connected = true;
       } else {
-        final connectionResults =
-            await connectionChannel.invokeMethod('connectBleDevices', {
-                  'deviceIds': [device.bluetoothId],
+        final isOnline =
+            await connectionChannel.invokeMethod('isDeviceOnline', {
+                  'deviceId': device.bluetoothId,
                 })
-                as Map<dynamic, dynamic>?;
+                as bool? ??
+            false;
 
-        connected =
-            connectionResults?[device.bluetoothId] as bool? ?? false;
+        if (isOnline) {
+          connected = true;
+        } else {
+          final connectionResults =
+              await connectionChannel.invokeMethod('connectBleDevices', {
+                    'deviceIds': [device.bluetoothId],
+                  })
+                  as Map<dynamic, dynamic>?;
+
+          connected =
+              connectionResults?[device.bluetoothId] as bool? ?? false;
+
+          if (!connected &&
+              device.devId != null &&
+              DeviceReconnectPolicy.shouldHealRunningFromDp(
+                devId: device.devId!,
+              )) {
+            connected = true;
+          }
+        }
       }
 
       if (connected) {
