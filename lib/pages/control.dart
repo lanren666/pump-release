@@ -91,6 +91,9 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   int _leftTotalPhase = 2;
   Duration _leftPhaseDuration = const Duration(minutes: 2);
   int _bothNotSynchronizedCount = 0;
+  DateTime? _bothDesyncSince;
+  DateTime? _bothSyncActionGraceUntil;
+  String? _lastBothSyncFailReason;
   bool _isIndividualMode = false; // 标记是否已切换到独立模式
 
   // 右侧设备状态
@@ -143,8 +146,12 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   static const int _toleranceDelayMs = 2500;
   static const int _bothTimeSyncThresholdSeconds = 30; // both 模式时间容差阈值（秒）
   static const int _bothBleCommandGapMs = 500;
+  static const int _bothStopBeforeStartDelayMs = 800;
   static const int _bothSideKickCooldownMs = 8000;
+  static const int _bothSyncActionGraceMs = 5000;
+  static const int _bothSustainedDesyncMs = 15000;
   DateTime? _lastBothSideKickAt;
+  bool _bothStartInProgress = false;
 
   /// Prevents duplicate session-complete low-battery dialogs per device per session.
   final Set<String> _sessionCompleteLowBatteryShown = {};
@@ -346,6 +353,14 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     }
 
     if (isRunning == 0) {
+      // Both 顺序启动里会先 stop；忽略此阶段的 idle DP105，避免清掉 hasStarted
+      if (_bothStartInProgress) {
+        PumpLog.i(
+          'BOTH_START',
+          '忽略 stop 阶段 DP105 isRunning=0 side=${isLeftDevice ? 'left' : 'right'}',
+        );
+        return;
+      }
       // debugPrint(
       //   '⚠️ 设备已停止: $deviceSide设备，需要恢复到初始状态（sessionMode: $_sessionMode）',
       // );
@@ -633,6 +648,34 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
           _syncBothDisplayFromLeft();
         });
       } else {
+        // Both 会话已标记开始，或正在顺序启动：只更新状态，不要抢切到 left/right
+        if (_selectedPump == PumpSelection.both &&
+            (_bothStartInProgress || _leftHasStarted || _rightHasStarted)) {
+          setState(() {
+            _deviceMaxDuration = maxTime;
+            if (isLeftDevice) {
+              _leftIsRunning = true;
+              _leftIntensityMode = intensityMode;
+              _leftHasStarted = true;
+              _leftElapsedTime = Duration(seconds: timePast);
+              _leftElapsedTimeInPhase = Duration(seconds: timePastInPhase);
+              _leftCurrentPhase = sessionPhase;
+              _leftTotalPhase = totalPhase;
+              _leftPhaseDuration = Duration(minutes: totalTimeInPhase);
+            } else {
+              _rightIsRunning = true;
+              _rightIntensityMode = intensityMode;
+              _rightHasStarted = true;
+              _rightElapsedTime = Duration(seconds: timePast);
+              _rightElapsedTimeInPhase = Duration(seconds: timePastInPhase);
+              _rightCurrentPhase = sessionPhase;
+              _rightTotalPhase = totalPhase;
+              _rightPhaseDuration = Duration(minutes: totalTimeInPhase);
+            }
+            _syncBothDisplayFromLeft();
+          });
+          return;
+        }
         // debugPrint(
         //   '⚠️ 设备手动启动: $deviceSide设备正在运行，但app未在运行状态，需要调整',
         // );
@@ -1971,6 +2014,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       case PumpSelection.right:
         return _rightIsRunning;
       case PumpSelection.both:
+        if (_bothStartInProgress) return true;
         return _leftIsRunning && _rightIsRunning;
     }
   }
@@ -2177,13 +2221,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                               _selectedPump == PumpSelection.both &&
                               !_isIndividualMode &&
                               !_areDevicesSynchronized())
-                            Builder(
-                              builder: (context) {
-                                debugPrint('🔄 条件满足，准备切换到独立模式: hasStarted=${_getCurrentHasStarted()}, selectedPump=$_selectedPump, isSynchronized=${_areDevicesSynchronized()}');
-                                // _buildSynchronizationWarning(),
-                                return _switchToIndividualMode();
-                              },
-                            ),
+                            _switchToIndividualMode(),
 
                           _buildIntensitySettings(),
                           SizedBox(height: ResponsiveText.getSize(context, 20)),
@@ -3482,17 +3520,21 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
 
   bool _areDevicesSynchronized() {
     final result = _checkDevicesSynchronization();
-    debugPrint('🔄 设备同步状态: $result');
-    
+    final deferDesync = _shouldDeferDesyncForGrace(_lastBothSyncFailReason);
+    final effectivelySynced = result || deferDesync;
+    debugPrint('🔄 设备同步状态: $effectivelySynced'
+        '${deferDesync ? " (action_grace defer $_lastBothSyncFailReason)" : ""}');
+
     // 如果已经是独立模式
     if (_isIndividualMode) {
       // 如果设备重新同步，退出独立模式
-      if (result) {
+      if (effectivelySynced) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _isIndividualMode) {
             setState(() {
               _isIndividualMode = false;
               _bothNotSynchronizedCount = 0;
+              _bothDesyncSince = null;
             });
             debugPrint('✅ 设备重新同步，退出独立模式');
           }
@@ -3501,17 +3543,55 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       // 在独立模式下，不再增加计数，直接返回 true（表示"已处理"，不需要再切换）
       return true;
     }
-    
+
     // 非独立模式下的正常同步检查逻辑
     debugPrint('🔄 设备不同步计数: $_bothNotSynchronizedCount');
-    if (!result) {
-      _bothNotSynchronizedCount++;
-    } else {
+    if (effectivelySynced) {
       _bothNotSynchronizedCount = 0;
+      _bothDesyncSince = null;
+    } else {
+      _bothDesyncSince ??= DateTime.now();
+      _bothNotSynchronizedCount++;
     }
-    // 当计数 >= 6 时，认为设备不同步（返回 false）
-    // 当计数 < 6 时，认为设备同步（返回 true）
-    return _bothNotSynchronizedCount < 6;
+
+    final sustainedMs = _bothDesyncSince == null
+        ? 0
+        : DateTime.now().difference(_bothDesyncSince!).inMilliseconds;
+    debugPrint('🔄 持续不同步: ${sustainedMs}ms / $_bothSustainedDesyncMs ms');
+    return sustainedMs < _bothSustainedDesyncMs;
+  }
+
+  bool _isBothUserActionDp(String dpId) {
+    return dpId == DpConstants.startN ||
+        dpId == DpConstants.switchN ||
+        dpId == DpConstants.stop ||
+        dpId == DpConstants.pause;
+  }
+
+  void _markBothSyncActionGrace() {
+    if (_selectedPump != PumpSelection.both) return;
+    final until =
+        DateTime.now().add(const Duration(milliseconds: _bothSyncActionGraceMs));
+    if (_bothSyncActionGraceUntil == null ||
+        until.isAfter(_bothSyncActionGraceUntil!)) {
+      _bothSyncActionGraceUntil = until;
+      PumpLog.i(
+        'SYNC_GRACE',
+        '用户操作后 ${_bothSyncActionGraceMs}ms 内 mode/phase 不同步不计入降级',
+      );
+    }
+  }
+
+  bool get _inBothSyncActionGrace {
+    final until = _bothSyncActionGraceUntil;
+    return until != null && DateTime.now().isBefore(until);
+  }
+
+  bool _shouldDeferDesyncForGrace(String? failReason) {
+    if (failReason == null || !_inBothSyncActionGrace) return false;
+    return failReason.startsWith('mode(') ||
+        failReason.startsWith('phase(') ||
+        failReason.startsWith('phaseTime(');
   }
 
   bool _checkDevicesSynchronization() {
@@ -3541,6 +3621,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     }
 
     final syncOk = failReason == null;
+    _lastBothSyncFailReason = failReason;
 
     BothSyncDiagnostics.logCheck(
       leftDevId: leftDevId,
@@ -3584,10 +3665,10 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             _selectedPump = PumpSelection.left;
           });
           BothSyncDiagnostics.logIndividualModeSwitch(
-            reason: 'desync_count>=6',
+            reason: 'sustained_desync>=${_bothSustainedDesyncMs ~/ 1000}s',
             leftTotalSec: _leftElapsedTime.inSeconds,
             rightTotalSec: _rightElapsedTime.inSeconds,
-            desyncCount: 6,
+            desyncCount: _bothNotSynchronizedCount,
           );
           debugPrint('✅ 检测到设备不同步，已切换到独立模式，并切换到左侧');
           debugPrint('🔄 切换后显示时间: ${_elapsedTime.inSeconds}s, 左侧时间: ${_leftElapsedTime.inSeconds}s, 右侧时间: ${_rightElapsedTime.inSeconds}s');
@@ -3621,54 +3702,103 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     required int totalPhase,
   }) async {
     const isCustom = true;
-    PumpLog.i('BOTH_START', '顺序下发 sessionSetting + startN 开始');
+    _bothStartInProgress = true;
+    PumpLog.i('BOTH_START', 'Both 启动：按需 stop → DP101 → 并行 startN');
+    try {
+      final needsStop = _leftIsRunning || _rightIsRunning;
+      if (needsStop) {
+        _recordPendingForDevices(0);
+        final stopFutures = <Future<bool>>[];
+        if (_leftDevice != null) {
+          stopFutures.add(
+            BleDpService.publishDp(
+              _leftDevice!.bluetoothId,
+              DpConstants.stop,
+              true,
+            ),
+          );
+        }
+        if (_rightDevice != null) {
+          stopFutures.add(
+            BleDpService.publishDp(
+              _rightDevice!.bluetoothId,
+              DpConstants.stop,
+              true,
+            ),
+          );
+        }
+        final stopResults = await Future.wait(stopFutures);
+        PumpLog.i('BOTH_START', '双侧 stop 并行完成 ok=$stopResults');
+        PumpLog.i(
+          'BOTH_START',
+          '等待 ${_bothStopBeforeStartDelayMs}ms 再 start',
+        );
+        await Future.delayed(
+          const Duration(milliseconds: _bothStopBeforeStartDelayMs),
+        );
+      } else {
+        PumpLog.i('BOTH_START', '双侧已 idle，跳过 stop');
+      }
 
-    if (_leftDevice != null) {
-      await BleDpService.pushSessionSetting(
-        _leftDevice!.bluetoothId,
-        _maxDuration,
-        isCustom,
-        totalPhase,
-        _leftStimulationSuctionLevel.toInt(),
-        _leftExpressionSuctionLevel.toInt(),
-        _leftHybridPatternEnabled,
-        _leftHybridPatternEnabled,
-        modeDurations,
-      );
-      await _gapBetweenBothBleCommands();
-    }
-    if (_rightDevice != null) {
-      await BleDpService.pushSessionSetting(
-        _rightDevice!.bluetoothId,
-        _maxDuration,
-        isCustom,
-        totalPhase,
-        _rightStimulationSuctionLevel.toInt(),
-        _rightExpressionSuctionLevel.toInt(),
-        _rightHybridPatternEnabled,
-        _rightHybridPatternEnabled,
-        modeDurations,
-      );
-      await _gapBetweenBothBleCommands();
-    }
+      final settingFutures = <Future<bool>>[];
+      if (_leftDevice != null) {
+        settingFutures.add(
+          BleDpService.pushSessionSetting(
+            _leftDevice!.bluetoothId,
+            _maxDuration,
+            isCustom,
+            totalPhase,
+            _leftStimulationSuctionLevel.toInt(),
+            _leftExpressionSuctionLevel.toInt(),
+            _leftHybridPatternEnabled,
+            _leftHybridPatternEnabled,
+            modeDurations,
+          ),
+        );
+      }
+      if (_rightDevice != null) {
+        settingFutures.add(
+          BleDpService.pushSessionSetting(
+            _rightDevice!.bluetoothId,
+            _maxDuration,
+            isCustom,
+            totalPhase,
+            _rightStimulationSuctionLevel.toInt(),
+            _rightExpressionSuctionLevel.toInt(),
+            _rightHybridPatternEnabled,
+            _rightHybridPatternEnabled,
+            modeDurations,
+          ),
+        );
+      }
+      final settingResults = await Future.wait(settingFutures);
+      PumpLog.i('BOTH_START', '双侧 DP101 并行完成 ok=$settingResults');
 
-    _recordPendingForDevices(1);
-    if (_leftDevice != null) {
-      await BleDpService.publishDp(
-        _leftDevice!.bluetoothId,
-        DpConstants.startN,
-        true,
-      );
-      await _gapBetweenBothBleCommands();
+      _recordPendingForDevices(1);
+      final startFutures = <Future<bool>>[];
+      if (_leftDevice != null) {
+        startFutures.add(
+          BleDpService.publishDp(
+            _leftDevice!.bluetoothId,
+            DpConstants.startN,
+            true,
+          ),
+        );
+      }
+      if (_rightDevice != null) {
+        startFutures.add(
+          BleDpService.publishDp(
+            _rightDevice!.bluetoothId,
+            DpConstants.startN,
+            true,
+          ),
+        );
+      }
+      await Future.wait(startFutures);
+      PumpLog.i('BOTH_START', '双侧 startN 已并行下发');
+    } finally {
+      _bothStartInProgress = false;
     }
-    if (_rightDevice != null) {
-      await BleDpService.publishDp(
-        _rightDevice!.bluetoothId,
-        DpConstants.startN,
-        true,
-      );
-    }
-    PumpLog.i('BOTH_START', '顺序下发完成');
   }
 
   Future<void> _kickBothSideSessionIfNeeded({
@@ -3683,6 +3813,14 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     final otherRunning = isLeft ? _rightIsRunning : _leftIsRunning;
     if (device == null || !otherStarted || !otherRunning) return;
 
+    if (_bothStartInProgress) {
+      PumpLog.i(
+        'BOTH_KICK',
+        'skipped reason=$reason side=${isLeft ? 'left' : 'right'} (both_start_in_progress)',
+      );
+      return;
+    }
+
     final now = DateTime.now();
     if (_lastBothSideKickAt != null &&
         now.difference(_lastBothSideKickAt!).inMilliseconds <
@@ -3693,41 +3831,30 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
 
     PumpLog.i(
       'BOTH_KICK',
-      'reason=$reason side=${isLeft ? 'left' : 'right'} devId=${device.devId}',
+      'reason=$reason side=${isLeft ? 'left' : 'right'} devId=${device.devId} '
+      '(一侧DP105报停止但另一侧仍在跑→补发sessionSetting+startN)',
     );
 
     final modeDurations = await _getModeDurations();
     final totalPhase = await _getTotalPhases();
     const isCustom = true;
 
-    if (isLeft) {
-      await BleDpService.pushSessionSetting(
-        device.bluetoothId,
-        _maxDuration,
-        isCustom,
-        totalPhase,
-        _leftStimulationSuctionLevel.toInt(),
-        _leftExpressionSuctionLevel.toInt(),
-        _leftHybridPatternEnabled,
-        _leftHybridPatternEnabled,
-        modeDurations,
-      );
-    } else {
-      await BleDpService.pushSessionSetting(
-        device.bluetoothId,
-        _maxDuration,
-        isCustom,
-        totalPhase,
-        _rightStimulationSuctionLevel.toInt(),
-        _rightExpressionSuctionLevel.toInt(),
-        _rightHybridPatternEnabled,
-        _rightHybridPatternEnabled,
-        modeDurations,
-      );
-    }
+    final ok = await BleDpService.pushSessionSetting(
+      device.bluetoothId,
+      _maxDuration,
+      isCustom,
+      totalPhase,
+      isLeft ? _leftStimulationSuctionLevel.toInt() : _rightStimulationSuctionLevel.toInt(),
+      isLeft ? _leftExpressionSuctionLevel.toInt() : _rightExpressionSuctionLevel.toInt(),
+      isLeft ? _leftHybridPatternEnabled : _rightHybridPatternEnabled,
+      isLeft ? _leftHybridPatternEnabled : _rightHybridPatternEnabled,
+      modeDurations,
+    );
+    PumpLog.i('BOTH_KICK', 'DP101 ok=$ok side=${isLeft ? 'left' : 'right'}');
     await _gapBetweenBothBleCommands();
     _recordPendingOperation(device, 1);
     await BleDpService.publishDp(device.bluetoothId, DpConstants.startN, true);
+    PumpLog.i('BOTH_KICK', 'startN 已下发 side=${isLeft ? 'left' : 'right'}');
 
     if (!mounted) return;
     setState(() {
@@ -3742,6 +3869,9 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   }
 
   void _publishDpToDevices(String dpId, dynamic value) {
+    if (_selectedPump == PumpSelection.both && _isBothUserActionDp(dpId)) {
+      _markBothSyncActionGrace();
+    }
     if (_selectedPump == PumpSelection.left && _leftDevice != null) {
       BleDpService.publishDp(_leftDevice!.bluetoothId, dpId, value);
     } else if (_selectedPump == PumpSelection.right && _rightDevice != null) {
@@ -3789,6 +3919,42 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                         final currentHasStarted = _getCurrentHasStarted();
                         final currentIsRunning = _getCurrentIsRunning();
                         if (!currentHasStarted && !currentIsRunning) {
+                          if (_selectedPump == PumpSelection.both) {
+                            setState(() {
+                              _bothStartInProgress = true;
+                              _setCurrentHasStarted(true);
+                            });
+                            _bothNotSynchronizedCount = 0;
+                            _bothDesyncSince = null;
+                            _markBothSyncActionGrace();
+
+                            final firstPhaseMode =
+                                await _getFirstPhaseIntensityMode();
+                            List<Map<String, int>>? modeDurations;
+                            int? totalPhase;
+                            if (AppConfig.tuyaEnabled) {
+                              modeDurations = await _getModeDurations();
+                              totalPhase = await _getTotalPhases();
+                            }
+                            if (!mounted) return;
+                            setState(() {
+                              _setCurrentIntensityMode(
+                                firstPhaseMode ?? IntensityMode.stimulation,
+                              );
+                            });
+                            if (AppConfig.tuyaEnabled &&
+                                modeDurations != null &&
+                                totalPhase != null) {
+                              await _startBothSessionSequentially(
+                                modeDurations: modeDurations,
+                                totalPhase: totalPhase,
+                              );
+                            } else {
+                              _bothStartInProgress = false;
+                            }
+                            return;
+                          }
+
                           final firstPhaseMode =
                               await _getFirstPhaseIntensityMode();
 
@@ -3804,8 +3970,8 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                             _setCurrentIntensityMode(
                               firstPhaseMode ?? IntensityMode.stimulation,
                             );
-                            _setCurrentIsRunning(true);
                             _setCurrentHasStarted(true);
+                            _setCurrentIsRunning(true);
                           });
 
                           // setState 之后执行异步操作
@@ -3840,19 +4006,11 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                                 _rightHybridPatternEnabled,
                                 modeDurations,
                               );
-                            } else if (_selectedPump == PumpSelection.both) {
-                              _bothNotSynchronizedCount = 0;
-                              await _startBothSessionSequentially(
-                                modeDurations: modeDurations,
-                                totalPhase: totalPhase,
-                              );
                             }
                           }
 
-                          if (_selectedPump != PumpSelection.both) {
-                            _recordPendingForDevices(1);
-                            _publishDpToDevices(DpConstants.startN, true);
-                          }
+                          _recordPendingForDevices(1);
+                          _publishDpToDevices(DpConstants.startN, true);
                         } else {
                           if (currentIsRunning) {
                             _recordPendingForDevices(2);

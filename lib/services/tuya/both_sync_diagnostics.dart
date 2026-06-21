@@ -29,7 +29,7 @@ class BothSyncDiagnostics {
         rightDevId != null && DpAliveTracker.isRecentlyAlive(rightDevId);
 
     final buf = StringBuffer()
-      ..write('[$tag] sync=${syncOk ? 'OK' : 'FAIL'}')
+      ..write('sync=${syncOk ? 'OK' : 'FAIL'}')
       ..write(' L=${_side(leftHasStarted, leftPhase, leftMode, leftTotalSec, leftPhaseSec, leftAlive, leftDevId)}')
       ..write(' R=${_side(rightHasStarted, rightPhase, rightMode, rightTotalSec, rightPhaseSec, rightAlive, rightDevId)}');
 
