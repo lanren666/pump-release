@@ -18,6 +18,7 @@ import 'services/tuya/device_listener_service.dart';
 import 'services/tuya/device_reconnect_policy.dart';
 import 'services/tuya/native_ble_device_id.dart';
 import 'services/tuya/running_status_log.dart';
+import 'models/connected_device.dart';
 
 void main() {
   runZonedGuarded(() {
@@ -94,6 +95,9 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
     _localeManager.localeNotifier.addListener(_onLocaleChanged);
     _loadLanguageSetting();
     _startPeriodicTask();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_executePeriodicTask());
+    });
   }
 
   void _onLocaleChanged() {
@@ -189,7 +193,133 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
     }
   }
 
-  void _executePeriodicTask() async {
+  Future<Map<String, bool>> _fetchDevicesOnlineMap(
+    List<ConnectedDevice> devices,
+  ) async {
+    final withDevId = devices
+        .where((d) => d.devId != null && d.devId!.isNotEmpty)
+        .toList();
+    if (withDevId.isEmpty) return {};
+
+    try {
+      final raw =
+          await _connectionChannel.invokeMethod('checkDevicesOnline', {
+                'deviceIds': withDevId.map((d) => d.devId!).toList(),
+              })
+              as Map<dynamic, dynamic>?;
+      if (raw == null) return {};
+
+      final result = <String, bool>{};
+      for (final device in withDevId) {
+        final status = raw[device.devId];
+        if (status is bool) {
+          result[device.devId!] = status;
+        }
+      }
+      return result;
+    } catch (e) {
+      debugPrint('批量检查设备在线状态失败: $e');
+      return {};
+    }
+  }
+
+  Future<bool> _isDeviceBleOnline(ConnectedDevice device) async {
+    try {
+      return await _connectionChannel.invokeMethod('isDeviceOnline', {
+                'deviceId': device.nativeBleId,
+              })
+              as bool? ??
+          false;
+    } catch (e) {
+      debugPrint('检查设备在线状态失败: $e');
+      return false;
+    }
+  }
+
+  Future<void> _healDeviceFromDp105(ConnectedDevice device) async {
+    OfflineStreakTracker.reset(device.bluetoothId);
+    debugPrint('DP105 近期活跃，恢复连接状态: devId=${device.devId}');
+    if (!device.isRunning) {
+      await _updateDeviceRunningStatus(
+        device.devId!,
+        true,
+        source: 'periodic_dp105_heal',
+      );
+    }
+    await DeviceListenerService.registerIfRunning(
+      device.copyWith(isRunning: true),
+      bypassOnlineCheck: true,
+    );
+  }
+
+  Future<void> _markDeviceOnlineFromProbe(ConnectedDevice device) async {
+    OfflineStreakTracker.reset(device.bluetoothId);
+    debugPrint('设备已在线，更新状态并注册监听器: ${device.devId}');
+    await _updateDeviceRunningStatus(
+      device.devId!,
+      true,
+      source: 'periodic_already_online',
+    );
+    await DeviceListenerService.registerIfRunning(device);
+  }
+
+  Future<void> _applyBatchConnectResults(
+    List<ConnectedDevice> devices,
+    Map<dynamic, dynamic>? connectionResults,
+  ) async {
+    if (connectionResults == null) {
+      debugPrint('批量连接失败，无法获取连接结果');
+      return;
+    }
+
+    for (final device in devices) {
+      if (device.devId == null || device.devId!.isEmpty) continue;
+
+      final connected =
+          connectionResults[device.nativeBleId] as bool? ?? false;
+      debugPrint('设备连接结果: ${device.nativeBleId} -> $connected');
+
+      if (connected) {
+        OfflineStreakTracker.reset(device.bluetoothId);
+        await _updateDeviceRunningStatus(
+          device.devId!,
+          true,
+          source: 'periodic_reconnect_ok',
+        );
+        debugPrint('设备重连成功: ${device.devId}');
+        await DeviceListenerService.registerIfRunning(
+          device.copyWith(isRunning: true),
+        );
+        continue;
+      }
+
+      if (DeviceReconnectPolicy.shouldHealRunningFromDp(devId: device.devId!)) {
+        await _healDeviceFromDp105(device);
+      } else {
+        debugPrint('设备重连失败: ${device.devId}');
+      }
+    }
+  }
+
+  Future<void> _batchConnectDevices(List<ConnectedDevice> devices) async {
+    if (devices.isEmpty) return;
+
+    final nativeIds = devices.map((d) => d.nativeBleId).toList();
+    debugPrint('批量重连 ${devices.length} 台设备: $nativeIds');
+
+    try {
+      final connectionResults =
+          await _connectionChannel.invokeMethod('connectBleDevices', {
+                'deviceIds': nativeIds,
+              })
+              as Map<dynamic, dynamic>?;
+      await _applyBatchConnectResults(devices, connectionResults);
+    } catch (e) {
+      debugPrint('批量重连设备时出错: $e');
+    }
+  }
+
+  Future<void> _executePeriodicTask() async {
     if (!AppConfig.tuyaEnabled) {
       return;
     }
@@ -231,6 +361,13 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
       }
 
       debugPrint('周期性任务: 检查 ${rememberedDevices.length} 个设备');
+      final isColdStartPass = OfflineStreakTracker.coldStartPassActive;
+      if (isColdStartPass) {
+        debugPrint('冷启动设备同步：跳过 offline 防抖，并行重连');
+      }
+
+      final onlineMap = await _fetchDevicesOnlineMap(rememberedDevices);
+      final devicesToConnect = <ConnectedDevice>[];
 
       for (final device in rememberedDevices) {
         if (device.devId == null || device.devId!.isEmpty) {
@@ -238,16 +375,12 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
           continue;
         }
 
+        final batchOnline = onlineMap[device.devId];
         var shouldReconnect = !device.isRunning;
 
         if (device.isRunning) {
           try {
-            final isOnline =
-                await _connectionChannel.invokeMethod('isDeviceOnline', {
-                      'deviceId': device.nativeBleId,
-                    })
-                    as bool? ??
-                false;
+            final isOnline = batchOnline ?? await _isDeviceBleOnline(device);
 
             if (DeviceReconnectPolicy.shouldRegisterListenerOnly(
               isRunning: device.isRunning,
@@ -274,31 +407,45 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
                 continue;
               }
 
-              final streak =
-                  OfflineStreakTracker.recordOffline(device.bluetoothId);
-              if (!OfflineStreakTracker.isConfirmedOffline(
-                device.bluetoothId,
-              )) {
+              if (isColdStartPass) {
+                OfflineStreakTracker.reset(device.bluetoothId);
                 debugPrint(
-                  '设备离线探测 $streak/${OfflineStreakTracker.confirmThreshold}，'
-                  '暂不改 isRunning: devId=${device.devId}, '
+                  '冷启动纠正 stale isRunning: devId=${device.devId}, '
                   'bluetoothId=${device.bluetoothId}',
                 );
-                continue;
-              }
+                await _updateDeviceRunningStatus(
+                  device.devId!,
+                  false,
+                  source: 'cold_start_stale_offline',
+                );
+                shouldReconnect = true;
+              } else {
+                final streak =
+                    OfflineStreakTracker.recordOffline(device.bluetoothId);
+                if (!OfflineStreakTracker.isConfirmedOffline(
+                  device.bluetoothId,
+                )) {
+                  debugPrint(
+                    '设备离线探测 $streak/${OfflineStreakTracker.confirmThreshold}，'
+                    '暂不改 isRunning: devId=${device.devId}, '
+                    'bluetoothId=${device.bluetoothId}',
+                  );
+                  continue;
+                }
 
-              OfflineStreakTracker.reset(device.bluetoothId);
-              debugPrint(
-                '设备持续离线，纠正 isRunning: devId=${device.devId}, '
-                'bluetoothId=${device.bluetoothId}',
-              );
-              await _updateDeviceRunningStatus(
-                device.devId!,
-                false,
-                source: 'periodic_stale_offline',
-                streak: streak,
-              );
-              shouldReconnect = true;
+                OfflineStreakTracker.reset(device.bluetoothId);
+                debugPrint(
+                  '设备持续离线，纠正 isRunning: devId=${device.devId}, '
+                  'bluetoothId=${device.bluetoothId}',
+                );
+                await _updateDeviceRunningStatus(
+                  device.devId!,
+                  false,
+                  source: 'periodic_stale_offline',
+                  streak: streak,
+                );
+                shouldReconnect = true;
+              }
             }
           } catch (e) {
             debugPrint('检查运行中设备在线状态失败: $e');
@@ -311,110 +458,32 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
         }
 
         debugPrint(
-          '发现未运行的设备，尝试重连: ${device.name} (devId: ${device.devId}, bluetoothId: ${device.bluetoothId})',
+          '发现未运行的设备，待重连: ${device.name} (devId: ${device.devId}, bluetoothId: ${device.bluetoothId})',
         );
 
         if (DeviceReconnectPolicy.shouldHealRunningFromDp(
           devId: device.devId!,
         )) {
-          OfflineStreakTracker.reset(device.bluetoothId);
-          debugPrint('DP105 近期活跃，恢复连接状态: devId=${device.devId}');
-          if (!device.isRunning) {
-            await _updateDeviceRunningStatus(
-              device.devId!,
-              true,
-              source: 'periodic_dp105_heal',
-            );
-          }
-          await DeviceListenerService.registerIfRunning(
-            device.copyWith(isRunning: true),
-            bypassOnlineCheck: true,
-          );
+          await _healDeviceFromDp105(device);
           continue;
         }
 
-        // 先检查是否已经在线
-        try {
-          final isOnline =
-              await _connectionChannel.invokeMethod('isDeviceOnline', {
-                    'deviceId': device.nativeBleId,
-                  })
-                  as bool? ??
-              false;
-
-          if (isOnline) {
-            OfflineStreakTracker.reset(device.bluetoothId);
-            debugPrint('设备已在线，更新状态并注册监听器: ${device.devId}');
-            await _updateDeviceRunningStatus(
-              device.devId!,
-              true,
-              source: 'periodic_already_online',
-            );
-
-            await DeviceListenerService.registerIfRunning(device);
-            
-            continue;
-          }
-        } catch (e) {
-          debugPrint('检查设备在线状态失败: $e');
+        final isOnline = batchOnline ?? await _isDeviceBleOnline(device);
+        if (isOnline) {
+          await _markDeviceOnlineFromProbe(device);
+          continue;
         }
 
-        // 不在线就尝试连接
-        debugPrint('设备离线，尝试连接: devId=${device.devId}, bluetoothId=${device.bluetoothId}');
-        try {
-          final connectionResults =
-              await _connectionChannel.invokeMethod('connectBleDevices', {
-                    'deviceIds': [device.nativeBleId],
-                  })
-                  as Map<dynamic, dynamic>?;
+        devicesToConnect.add(device);
+      }
 
-          if (connectionResults != null) {
-            final connected =
-                connectionResults[device.nativeBleId] as bool? ?? false;
-            debugPrint('设备连接结果: ${device.nativeBleId} -> $connected');
-
-            if (connected) {
-              OfflineStreakTracker.reset(device.bluetoothId);
-              await _updateDeviceRunningStatus(
-                device.devId!,
-                true,
-                source: 'periodic_reconnect_ok',
-              );
-              debugPrint('设备重连成功: ${device.devId}');
-              await DeviceListenerService.registerIfRunning(
-                device.copyWith(isRunning: true),
-              );
-            } else if (DeviceReconnectPolicy.shouldHealRunningFromDp(
-              devId: device.devId!,
-            )) {
-              OfflineStreakTracker.reset(device.bluetoothId);
-              debugPrint(
-                '重连失败但 DP105 仍活跃，恢复 isRunning: ${device.devId}',
-              );
-              if (!device.isRunning) {
-                await _updateDeviceRunningStatus(
-                  device.devId!,
-                  true,
-                  source: 'periodic_reconnect_dp105_heal',
-                );
-              }
-              await DeviceListenerService.registerIfRunning(
-                device.copyWith(isRunning: true),
-                bypassOnlineCheck: true,
-              );
-            } else {
-              debugPrint('设备重连失败: ${device.devId}');
-            }
-          } else {
-            debugPrint('连接设备失败，无法获取连接结果: ${device.devId}');
-          }
-        } catch (e) {
-          debugPrint('重连设备时出错: $e');
-        }
+      if (devicesToConnect.isNotEmpty) {
+        await _batchConnectDevices(devicesToConnect);
       }
     } catch (e) {
       debugPrint('周期性任务执行出错: $e');
     } finally {
+      OfflineStreakTracker.completeColdStartPass();
       _isTaskRunning = false;
       _taskStartTime = null;
     }

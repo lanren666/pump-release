@@ -1062,109 +1062,123 @@ class _HomePageState extends State<HomePage>
     ConnectedDevice device,
     bool hasBottomMargin,
   ) {
-    final l10n = AppLocalizations.of(context)!;
-    final sideLabel = device.position == 'left' ? l10n.left : l10n.right;
-    return Container(
-      margin: EdgeInsets.only(bottom: hasBottomMargin ? 12 : 0),
-      padding: ResponsiveText.symmetric(context, horizontal: 12, vertical: 16),
-      decoration: BoxDecoration(
-        color: device.isRunning
-            ? const Color(0xFFF0FDF4)
-            : Colors.grey.shade300,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.2), width: 1),
-      ),
-      child: Row(
-        children: [
-          device.isRunning
-              ? Icon(
-                  Icons.check,
-                  color: Colors.green,
-                  size: ResponsiveText.getSize(context, 24),
-                )
-              : SizedBox(
-                  width: ResponsiveText.getSize(context, 22),
-                  height: ResponsiveText.getSize(context, 22),
-                  child: const CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
-                  ),
-                ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+    return ValueListenableBuilder<bool>(
+      valueListenable: OfflineStreakTracker.coldStartInProgress,
+      builder: (context, coldStartInProgress, _) {
+        final showConnected = device.isRunning && !coldStartInProgress;
+        final l10n = AppLocalizations.of(context)!;
+        final sideLabel = device.position == 'left' ? l10n.left : l10n.right;
+        return Container(
+          margin: EdgeInsets.only(bottom: hasBottomMargin ? 12 : 0),
+          padding: ResponsiveText.symmetric(
+            context,
+            horizontal: 12,
+            vertical: 16,
+          ),
+          decoration: BoxDecoration(
+            color: showConnected
+                ? const Color(0xFFF0FDF4)
+                : Colors.grey.shade300,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Colors.grey.withValues(alpha: 0.2),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              showConnected
+                  ? Icon(
+                      Icons.check,
+                      color: Colors.green,
+                      size: ResponsiveText.getSize(context, 24),
+                    )
+                  : SizedBox(
+                      width: ResponsiveText.getSize(context, 22),
+                      height: ResponsiveText.getSize(context, 22),
+                      child: const CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Colors.orange),
+                      ),
+                    ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Text(
-                        device.name,
-                        style: ResponsiveText.smallTitle(
-                          context,
-                          fontWeight: FontWeight.w500,
-                          color: AppColor.textPrimary,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            device.name,
+                            style: ResponsiveText.smallTitle(
+                              context,
+                              fontWeight: FontWeight.w500,
+                              color: AppColor.textPrimary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF5E6B3), // Light yellow
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        sideLabel,
-                        style: ResponsiveText.captionSmall(
-                          context,
-                          fontWeight: FontWeight.w500,
-                          color: const Color(0xFF8D6E63), // Brown text
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF5E6B3),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            sideLabel,
+                            style: ResponsiveText.captionSmall(
+                              context,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF8D6E63),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      ],
                     ),
+                    showConnected
+                        ? const SizedBox(height: 4)
+                        : const SizedBox.shrink(),
+                    showConnected
+                        ? Row(
+                            children: [
+                              _buildBatteryIcon(device.battery),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${device.battery}/3',
+                                style: ResponsiveText.body(
+                                  context,
+                                  color: AppColor.textSecondary,
+                                ),
+                              ),
+                            ],
+                          )
+                        : const SizedBox.shrink(),
                   ],
                 ),
-                device.isRunning
-                    ? const SizedBox(height: 4)
-                    : const SizedBox.shrink(),
-                device.isRunning
-                    ? Row(
-                        children: [
-                          _buildBatteryIcon(device.battery),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${device.battery}/3',
-                            style: ResponsiveText.body(
-                              context,
-                              color: AppColor.textSecondary,
-                            ),
-                          ),
-                        ],
-                      )
-                    : const SizedBox.shrink(),
-              ],
-            ),
+              ),
+              SizedBox(width: ResponsiveText.getSize(context, 12)),
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: Icon(
+                  Symbols.delete,
+                  weight: 500,
+                  color: Colors.red,
+                  size: ResponsiveText.getSize(context, 22),
+                ),
+                onPressed: () => _disconnectDevice(device.bluetoothId),
+              ),
+            ],
           ),
-          SizedBox(width: ResponsiveText.getSize(context, 12)),
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: Icon(
-              Symbols.delete,
-              weight: 500,
-              color: Colors.red,
-              size: ResponsiveText.getSize(context, 22),
-            ),
-            onPressed: () => _disconnectDevice(device.bluetoothId),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

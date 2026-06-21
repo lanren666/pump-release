@@ -66,6 +66,7 @@ void main() {
 
     test('requires two consecutive offline probes (~6s at 3s poll)', () {
       const id = 'ble-1';
+      OfflineStreakTracker.completeColdStartPass();
       expect(OfflineStreakTracker.confirmThreshold, 2);
       expect(OfflineStreakTracker.recordOffline(id), 1);
       expect(OfflineStreakTracker.isConfirmedOffline(id), isFalse);
@@ -83,6 +84,7 @@ void main() {
 
     test('streak restarts after intermittent offline-online-offline', () {
       const id = 'ble-3';
+      OfflineStreakTracker.completeColdStartPass();
       OfflineStreakTracker.recordOffline(id);
       OfflineStreakTracker.reset(id);
       expect(OfflineStreakTracker.recordOffline(id), 1);
@@ -109,6 +111,7 @@ void main() {
 
     test('single offline network event does not apply running false', () {
       const id = 'ble-net-2';
+      OfflineStreakTracker.completeColdStartPass();
       expect(
         NetworkStatusRunningPolicy.shouldApplyRunningFalse(
           dbIsRunning: true,
@@ -121,6 +124,7 @@ void main() {
 
     test('second offline signal confirms running false', () {
       const id = 'ble-net-3';
+      OfflineStreakTracker.completeColdStartPass();
       NetworkStatusRunningPolicy.shouldApplyRunningFalse(
         dbIsRunning: true,
         bluetoothId: id,
@@ -137,6 +141,7 @@ void main() {
 
     test('online between offline signals restarts streak', () {
       const id = 'ble-net-4';
+      OfflineStreakTracker.completeColdStartPass();
       NetworkStatusRunningPolicy.shouldApplyRunningFalse(
         dbIsRunning: true,
         bluetoothId: id,
@@ -153,6 +158,7 @@ void main() {
 
     test('poll and network callbacks share the same streak counter', () {
       const id = 'ble-net-5';
+      OfflineStreakTracker.completeColdStartPass();
       OfflineStreakTracker.recordOffline(id);
       expect(
         NetworkStatusRunningPolicy.shouldApplyRunningFalse(

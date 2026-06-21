@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// Tracks recent DP105 (session status) reports as proof the BLE data path is alive.
 ///
 /// Used when native `isDeviceOnline` false-negatives while the DP listener still
@@ -72,6 +74,22 @@ class OfflineStreakTracker {
   /// Consecutive offline probes required before treating device as offline.
   static const int confirmThreshold = 2;
 
+  /// First app launch pass skips debounce so stale DB `isRunning` is corrected
+  /// immediately and parallel reconnect can start without ~6s delay.
+  static bool coldStartPassActive = true;
+
+  /// Drives UI rebuild when cold-start BLE verification finishes.
+  static final ValueNotifier<bool> coldStartInProgress = ValueNotifier(true);
+
+  static void completeColdStartPass() {
+    coldStartPassActive = false;
+    if (coldStartInProgress.value) {
+      coldStartInProgress.value = false;
+    }
+  }
+
+  static bool shouldConfirmOfflineImmediately() => coldStartPassActive;
+
   static final Map<String, int> _streakByBluetoothId = {};
 
   /// Records one offline probe; returns the new streak count.
@@ -89,6 +107,7 @@ class OfflineStreakTracker {
 
   static bool isConfirmedOffline(String bluetoothId) {
     if (bluetoothId.isEmpty) return false;
+    if (coldStartPassActive) return true;
     return (_streakByBluetoothId[bluetoothId] ?? 0) >= confirmThreshold;
   }
 
@@ -97,8 +116,11 @@ class OfflineStreakTracker {
     return _streakByBluetoothId[bluetoothId] ?? 0;
   }
 
-  /// Visible for tests only.
-  static void clearAll() => _streakByBluetoothId.clear();
+  static void clearAll() {
+    _streakByBluetoothId.clear();
+    coldStartPassActive = false;
+    coldStartInProgress.value = false;
+  }
 }
 
 /// Debounces `isRunning=false` from native network/BLE callbacks (e.g. Android

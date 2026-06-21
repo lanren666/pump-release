@@ -2591,6 +2591,23 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   static const Color _statusDisconnectedText = Color(0xFFDC2626);
 
   Widget _buildDeviceStatusCard(String side, ConnectedDevice? device) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: OfflineStreakTracker.coldStartInProgress,
+      builder: (context, coldStartInProgress, _) {
+        return _buildDeviceStatusCardContent(
+          side,
+          device,
+          coldStartInProgress: coldStartInProgress,
+        );
+      },
+    );
+  }
+
+  Widget _buildDeviceStatusCardContent(
+    String side,
+    ConnectedDevice? device, {
+    required bool coldStartInProgress,
+  }) {
     final l10n = AppLocalizations.of(context)!;
     final sideLabel = side == 'L' ? l10n.left : l10n.right;
 
@@ -2605,6 +2622,35 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             fontWeight: FontWeight.bold,
             color: Colors.grey.shade700,
           ),
+        ),
+      );
+    }
+
+    if (coldStartInProgress ||
+        _reconnectingDeviceIds.contains(device.bluetoothId)) {
+      return _buildStatusCardShell(
+        backgroundColor: _statusDisconnectedBackground,
+        borderColor: const Color.fromRGBO(0, 0, 0, 0.08),
+        child: Row(
+          children: [
+            SizedBox(
+              width: ResponsiveText.getSize(context, 14),
+              height: ResponsiveText.getSize(context, 14),
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColor.primaryPurple,
+              ),
+            ),
+            SizedBox(width: ResponsiveText.getSize(context, 6)),
+            Text(
+              '$sideLabel: ${l10n.connecting}',
+              style: ResponsiveText.bodySmall(
+                context,
+                fontWeight: FontWeight.bold,
+                color: AppColor.primaryPurple,
+              ),
+            ),
+          ],
         ),
       );
     }
