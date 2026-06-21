@@ -15,6 +15,7 @@ import 'services/database_service.dart';
 import 'services/tuya/dp_constants.dart';
 import 'services/tuya/ble_dp_service.dart';
 import 'services/tuya/device_listener_service.dart';
+import 'services/tuya/device_reconnect_policy.dart';
 
 void main() {
   runZonedGuarded(() {
@@ -230,8 +231,42 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
           continue;
         }
 
+        var shouldReconnect = !device.isRunning;
+
         if (device.isRunning) {
-          await DeviceListenerService.registerIfRunning(device);
+          try {
+            final isOnline =
+                await _connectionChannel.invokeMethod('isDeviceOnline', {
+                      'deviceId': device.bluetoothId,
+                    })
+                    as bool? ??
+                false;
+
+            if (DeviceReconnectPolicy.shouldRegisterListenerOnly(
+              isRunning: device.isRunning,
+              isOnline: isOnline,
+            )) {
+              await DeviceListenerService.registerIfRunning(device);
+              continue;
+            }
+
+            if (DeviceReconnectPolicy.isStaleRunningState(
+              isRunning: device.isRunning,
+              isOnline: isOnline,
+            )) {
+              debugPrint(
+                '设备标记运行中但已离线，纠正 isRunning: devId=${device.devId}, bluetoothId=${device.bluetoothId}',
+              );
+              await _updateDeviceRunningStatus(device.devId!, false);
+              shouldReconnect = true;
+            }
+          } catch (e) {
+            debugPrint('检查运行中设备在线状态失败: $e');
+            continue;
+          }
+        }
+
+        if (!shouldReconnect) {
           continue;
         }
 

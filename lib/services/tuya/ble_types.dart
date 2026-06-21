@@ -12,7 +12,7 @@ class DpData {
 
   factory DpData.fromJson(Map<String, dynamic> json) {
     return DpData(
-      dpId: json['dpId'] ?? '',
+      dpId: json['dpId']?.toString() ?? '',
       value: json['value'],
       timestamp: json['timestamp'] as int?,
     );

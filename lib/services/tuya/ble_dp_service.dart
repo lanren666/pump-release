@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:pump/config/app_config.dart';
 import 'ble_types.dart';
 import 'dp_constants.dart';
+import 'session_setting_parser.dart';
 import '../../services/database_service.dart';
 import '../diagnostics/app_logger.dart';
 
@@ -127,6 +128,7 @@ class BleDpService {
       throw Exception('Tuya feature is disabled');
     }
 
+    String? resolvedDevId;
     try {
       // 将蓝牙ID转换为devId
       final device = await _dbService.getDeviceByBluetoothId(deviceId);
@@ -134,6 +136,7 @@ class BleDpService {
         debugPrint('⚠️ 设备未找到 $deviceId');
         throw Exception('Device not found');
       }
+      resolvedDevId = device.devId;
 
       AppLogger.hardware('getDp invoke', {
         'bluetoothId': deviceId,
@@ -147,6 +150,13 @@ class BleDpService {
 
       if (result is Map) {
         final m = Map<String, dynamic>.from(result);
+        if (dpId == DpConstants.sessionSetting) {
+          SessionSettingParser.logSessionSettingPayload(
+            source: 'getDp',
+            deviceId: device.devId ?? deviceId,
+            rawValue: m['value'],
+          );
+        }
         AppLogger.hardware('getDp ok', {'devId': device.devId, 'dpId': dpId, 'keys': m.keys.toList()});
         return m;
       } else {
@@ -157,7 +167,16 @@ class BleDpService {
       final errorCode = details?['code'] as String?;
       final errorMessage = e.message ?? 'Unknown error';
 
-      debugPrint("Error getting DP: code=$errorCode, message=$errorMessage");
+      debugPrint(
+        "Error getting DP: code=$errorCode, message=$errorMessage "
+        '(bluetoothId=$deviceId, devId=$resolvedDevId, dpId=$dpId)',
+      );
+      if (dpId == DpConstants.sessionSetting) {
+        debugPrint(
+          '📋 DP101 sessionSetting [getDp failed] deviceId=${resolvedDevId ?? deviceId} '
+          'no payload returned',
+        );
+      }
       AppLogger.e('hw', 'getDp PlatformException', {
         'bluetoothId': deviceId,
         'dpId': dpId,
@@ -196,6 +215,14 @@ class BleDpService {
                 final reportData = DpReportData.fromJson(
                   eventData['data'] as Map<String, dynamic>,
                 );
+                for (final dp in reportData.dps) {
+                  if (dp.dpId.toString() == DpConstants.sessionStatus) {
+                    debugPrint(
+                      '📡 DP105 sessionStatus [native→flutter] '
+                      'deviceId=${reportData.deviceId} value=${dp.value}',
+                    );
+                  }
+                }
                 AppLogger.hardware('dp report from device', {
                   'deviceId': reportData.deviceId,
                   'dpCount': reportData.dps.length,
@@ -264,7 +291,9 @@ class BleDpService {
       hexData = '0$hexData';
     }
 
-    debugPrint("hexData: $hexData");
+    debugPrint(
+      'hexData: $hexData (push DP101, len=${hexData.length}, no Bat_Volt appended by App)',
+    );
 
     return publishDps(deviceId, [
       DpData(dpId: DpConstants.sessionSetting, value: hexData),

@@ -14,6 +14,7 @@ import '../models/search_state.dart';
 import '../services/database_service.dart';
 import '../services/tuya/ble_dp_service.dart';
 import '../services/tuya/dp_constants.dart';
+import '../services/tuya/device_listener_service.dart';
 import '../l10n/app_localizations.dart';
 import '../services/diagnostics/app_logger.dart';
 import '../services/battery/battery_alert_logic.dart';
@@ -155,6 +156,9 @@ class _HomePageState extends State<HomePage>
             '🧭 isRunning 更新来源=checkDevicesOnline: devId=${device.devId}, isOnline=$isOnline',
           );
           await _updateDeviceRunningStatus(device.devId!, true);
+          await DeviceListenerService.registerIfRunning(
+            device.copyWith(isRunning: true),
+          );
         }
       }
 
@@ -1360,6 +1364,9 @@ class _HomePageState extends State<HomePage>
           device.bluetoothId,
         );
         _devicePendingConnectLowBatteryCheck = savedDevice ?? newDevice;
+        if (savedDevice != null) {
+          await DeviceListenerService.registerIfRunning(savedDevice);
+        }
 
         return true;
       } else {

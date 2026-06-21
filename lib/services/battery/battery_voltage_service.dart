@@ -19,7 +19,12 @@ class BatteryVoltageService {
         DpConstants.sessionSetting,
       );
       final rawValue = response['value'];
-      final hex = _normalizeSessionSettingHex(rawValue);
+      SessionSettingParser.logSessionSettingPayload(
+        source: 'readBatVolt',
+        deviceId: bluetoothId,
+        rawValue: rawValue,
+      );
+      final hex = SessionSettingParser.normalizeHex(rawValue);
       final batVolt = SessionSettingParser.parseBatVolt(hex);
 
       AppLogger.hardware('readBatVolt', {
@@ -37,11 +42,5 @@ class BatteryVoltageService {
       });
       return null;
     }
-  }
-
-  static String? _normalizeSessionSettingHex(dynamic rawValue) {
-    if (rawValue == null) return null;
-    if (rawValue is String) return rawValue;
-    return rawValue.toString();
   }
 }

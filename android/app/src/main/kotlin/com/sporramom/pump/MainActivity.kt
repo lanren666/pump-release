@@ -1176,6 +1176,82 @@ class MainActivity : FlutterActivity(), LocationListener {
         }
     }
 
+    /// Flutter may pass Tuya devId or BLE uuid (bluetoothId). Resolve to devId for SDK calls.
+    private fun resolveDevId(input: String, callback: (String?) -> Unit) {
+        resolveDevIds(listOf(input)) { map -> callback(map[input]) }
+    }
+
+    private fun resolveDevIds(
+        inputs: List<String>,
+        callback: (Map<String, String>) -> Unit
+    ) {
+        if (inputs.isEmpty()) {
+            callback(emptyMap())
+            return
+        }
+
+        ThingHomeSdk.getHomeManagerInstance().queryHomeList(
+            object : IThingGetHomeListCallback {
+                override fun onSuccess(homeBeans: List<HomeBean>) {
+                    if (homeBeans.isEmpty()) {
+                        callback(inputs.associateWith { it })
+                        return
+                    }
+                    collectDevicesFromHomes(homeBeans, 0, mutableListOf()) { allDevices ->
+                        val resolved = mutableMapOf<String, String>()
+                        for (input in inputs) {
+                            val match = allDevices.firstOrNull { device ->
+                                device.devId == input || device.uuid == input
+                            }
+                            val devId = match?.devId ?: input
+                            resolved[input] = devId
+                            if (match != null && devId != input) {
+                                android.util.Log.d(
+                                    "MainActivity",
+                                    "resolveDevId: input=$input -> devId=$devId"
+                                )
+                            }
+                        }
+                        callback(resolved)
+                    }
+                }
+
+                override fun onError(errorCode: String, error: String) {
+                    android.util.Log.w(
+                        "MainActivity",
+                        "resolveDevId home list failed: $error, using inputs as-is"
+                    )
+                    callback(inputs.associateWith { it })
+                }
+            }
+        )
+    }
+
+    private fun collectDevicesFromHomes(
+        homes: List<HomeBean>,
+        index: Int,
+        accumulated: MutableList<DeviceBean>,
+        callback: (List<DeviceBean>) -> Unit
+    ) {
+        if (index >= homes.size) {
+            callback(accumulated)
+            return
+        }
+
+        ThingHomeSdk.newHomeInstance(homes[index].homeId).getHomeDetail(
+            object : IThingHomeResultCallback {
+                override fun onSuccess(bean: HomeBean) {
+                    bean.deviceList?.let { accumulated.addAll(it) }
+                    collectDevicesFromHomes(homes, index + 1, accumulated, callback)
+                }
+
+                override fun onError(errorCode: String, errorMsg: String) {
+                    collectDevicesFromHomes(homes, index + 1, accumulated, callback)
+                }
+            }
+        )
+    }
+
     private fun handleIsDeviceOnline(call: MethodCall, result: MethodChannel.Result) {
         val args = call.arguments as? Map<*, *>
         val deviceId = args?.get("deviceId") as? String
@@ -1184,8 +1260,13 @@ class MainActivity : FlutterActivity(), LocationListener {
                 return
             }
 
-        val isOnline = ThingHomeSdk.getBleManager().isBleLocalOnline(deviceId)
-        result.success(isOnline)
+        resolveDevId(deviceId) { resolvedDevId ->
+            mainHandler.post {
+                val devId = resolvedDevId ?: deviceId
+                val isOnline = ThingHomeSdk.getBleManager().isBleLocalOnline(devId)
+                result.success(isOnline)
+            }
+        }
     }
 
     private fun handleCheckDevicesOnline(call: MethodCall, result: MethodChannel.Result) {
@@ -1196,17 +1277,24 @@ class MainActivity : FlutterActivity(), LocationListener {
                 return
             }
 
-        android.util.Log.d("MainActivity", "🔍 批量检查设备在线状态: $deviceIds")
+        val flutterIds = deviceIds.map { it.toString() }
+        android.util.Log.d("MainActivity", "🔍 批量检查设备在线状态: $flutterIds")
 
-        val onlineStatusMap = mutableMapOf<String, Boolean>()
-        for (deviceId in deviceIds) {
-            val devId = deviceId.toString()
-            val isOnline = ThingHomeSdk.getBleManager().isBleLocalOnline(devId)
-            onlineStatusMap[devId] = isOnline
-            android.util.Log.d("MainActivity", "  设备 $devId 在线状态: $isOnline")
+        resolveDevIds(flutterIds) { resolvedMap ->
+            mainHandler.post {
+                val onlineStatusMap = mutableMapOf<String, Boolean>()
+                for (flutterId in flutterIds) {
+                    val devId = resolvedMap[flutterId] ?: flutterId
+                    val isOnline = ThingHomeSdk.getBleManager().isBleLocalOnline(devId)
+                    onlineStatusMap[flutterId] = isOnline
+                    android.util.Log.d(
+                        "MainActivity",
+                        "  设备 flutterId=$flutterId devId=$devId 在线状态: $isOnline"
+                    )
+                }
+                result.success(onlineStatusMap)
+            }
         }
-
-        result.success(onlineStatusMap)
     }
 
     private fun handleConnectBleDevices(call: MethodCall, result: MethodChannel.Result) {
@@ -1217,43 +1305,48 @@ class MainActivity : FlutterActivity(), LocationListener {
                 return
             }
 
-        android.util.Log.d("MainActivity", "🔗 批量连接设备: $deviceIds")
+        val flutterIds = deviceIds.map { it.toString() }
+        android.util.Log.d("MainActivity", "🔗 批量连接设备: $flutterIds")
 
-        // 在主线程中执行连接操作（官方要求）
-        mainHandler.post {
-            val builderList = mutableListOf<BleConnectBuilder>()
-            for (deviceId in deviceIds) {
-                val devId = deviceId.toString()
-                updateConnectionState(devId, "connecting")
-                val bleConnectBuilder = BleConnectBuilder()
-                bleConnectBuilder.setDevId(devId)
-                bleConnectBuilder.setDirectConnect(true)
-//                bleConnectBuilder.setLevel(BleConnectBuilder.Level.FORCE)
-                builderList.add(bleConnectBuilder)
-            }
-
-            ThingHomeSdk.getBleManager().connectBleDevice(builderList)
-
-            // 等待一段时间后检查连接状态
-            mainHandler.postDelayed({
-                val connectionResults = mutableMapOf<String, Boolean>()
-                for (deviceId in deviceIds) {
-                    val devId = deviceId.toString()
-                    android.util.Log.d("MainActivity", "xxxxxxxxxx: $devId")
-                    val isOnline = ThingHomeSdk.getBleManager().isBleLocalOnline(devId)
-                    connectionResults[devId] = isOnline
-                    if (isOnline) {
-                        android.util.Log.d("MainActivity", "✅ 设备连接成功: $devId")
-                        updateConnectionState(devId, "connected")
-                        // 连接成功后再注册监听器
-                        registerDeviceListener(devId)
-                    } else {
-                        android.util.Log.w("MainActivity", "⚠️ 设备连接失败: $devId")
-                        updateConnectionState(devId, "disconnected")
-                    }
+        resolveDevIds(flutterIds) { resolvedMap ->
+            mainHandler.post {
+                val builderList = mutableListOf<BleConnectBuilder>()
+                for (flutterId in flutterIds) {
+                    val devId = resolvedMap[flutterId] ?: flutterId
+                    updateConnectionState(flutterId, "connecting")
+                    val bleConnectBuilder = BleConnectBuilder()
+                    bleConnectBuilder.setDevId(devId)
+                    bleConnectBuilder.setDirectConnect(true)
+                    builderList.add(bleConnectBuilder)
                 }
-                result.success(connectionResults)
-            }, 3000) // 等待3秒检查连接状态
+
+                ThingHomeSdk.getBleManager().connectBleDevice(builderList)
+
+                mainHandler.postDelayed({
+                    val connectionResults = mutableMapOf<String, Boolean>()
+                    for (flutterId in flutterIds) {
+                        val devId = resolvedMap[flutterId] ?: flutterId
+                        val isOnline =
+                            ThingHomeSdk.getBleManager().isBleLocalOnline(devId)
+                        connectionResults[flutterId] = isOnline
+                        if (isOnline) {
+                            android.util.Log.d(
+                                "MainActivity",
+                                "✅ 设备连接成功: flutterId=$flutterId devId=$devId"
+                            )
+                            updateConnectionState(flutterId, "connected")
+                            registerDeviceListener(devId)
+                        } else {
+                            android.util.Log.w(
+                                "MainActivity",
+                                "⚠️ 设备连接失败: flutterId=$flutterId devId=$devId"
+                            )
+                            updateConnectionState(flutterId, "disconnected")
+                        }
+                    }
+                    result.success(connectionResults)
+                }, 3000)
+            }
         }
     }
 
@@ -1289,30 +1382,39 @@ class MainActivity : FlutterActivity(), LocationListener {
 
     private fun handleRegisterDeviceListener(call: MethodCall, result: MethodChannel.Result) {
         val args = call.arguments as? Map<*, *>
-        val devId = args?.get("deviceId") as? String
+        val deviceId = args?.get("deviceId") as? String
             ?: run {
                 result.error("INVALID_ARGUMENT", "deviceId is required", null)
                 return
             }
 
-        android.util.Log.d("MainActivity", "📝 Flutter 请求注册设备监听器: devId=$devId")
+        android.util.Log.d("MainActivity", "📝 Flutter 请求注册设备监听器: deviceId=$deviceId")
 
-        try {
-            // 检查设备是否在线
-            val isOnline = ThingHomeSdk.getBleManager().isBleLocalOnline(devId)
-            if (!isOnline) {
-                android.util.Log.w("MainActivity", "⚠️ 设备未在线，无法注册监听器: devId=$devId")
-                result.error("DEVICE_OFFLINE", "Device is not online", null)
-                return
+        resolveDevId(deviceId) { resolvedDevId ->
+            mainHandler.post {
+                val devId = resolvedDevId ?: deviceId
+                try {
+                    val isOnline = ThingHomeSdk.getBleManager().isBleLocalOnline(devId)
+                    if (!isOnline) {
+                        android.util.Log.w(
+                            "MainActivity",
+                            "⚠️ 设备未在线，无法注册监听器: input=$deviceId devId=$devId"
+                        )
+                        result.error("DEVICE_OFFLINE", "Device is not online", null)
+                        return@post
+                    }
+
+                    registerDeviceListener(devId)
+                    android.util.Log.d(
+                        "MainActivity",
+                        "✅ 设备监听器注册成功: input=$deviceId devId=$devId"
+                    )
+                    result.success(null)
+                } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "❌ 注册设备监听器失败: ${e.message}", e)
+                    result.error("REGISTER_FAILED", e.message ?: "Unknown error", null)
+                }
             }
-
-            // 注册监听器
-            registerDeviceListener(devId)
-            android.util.Log.d("MainActivity", "✅ 设备监听器注册成功: devId=$devId")
-            result.success(null)
-        } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "❌ 注册设备监听器失败: ${e.message}", e)
-            result.error("REGISTER_FAILED", e.message ?: "Unknown error", null)
         }
     }
 
