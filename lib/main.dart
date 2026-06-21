@@ -16,6 +16,8 @@ import 'services/tuya/dp_constants.dart';
 import 'services/tuya/ble_dp_service.dart';
 import 'services/tuya/device_listener_service.dart';
 import 'services/tuya/device_reconnect_policy.dart';
+import 'services/tuya/native_ble_device_id.dart';
+import 'services/tuya/running_status_log.dart';
 
 void main() {
   runZonedGuarded(() {
@@ -35,9 +37,6 @@ void main() {
 
       if (AppConfig.tuyaEnabled) {
         DpChangeHandle.init();
-        // Warm up home preparation in background to reduce first-connect latency.
-        // iOS native channels are set up with a short delay; keep this slightly later
-        // to avoid MissingPluginException during cold start.
         Future.delayed(const Duration(milliseconds: 800), () {
           TuyaSdkService.warmUpHomeReady();
         });
@@ -245,7 +244,7 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
           try {
             final isOnline =
                 await _connectionChannel.invokeMethod('isDeviceOnline', {
-                      'deviceId': device.bluetoothId,
+                      'deviceId': device.nativeBleId,
                     })
                     as bool? ??
                 false;
@@ -293,7 +292,12 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
                 '设备持续离线，纠正 isRunning: devId=${device.devId}, '
                 'bluetoothId=${device.bluetoothId}',
               );
-              await _updateDeviceRunningStatus(device.devId!, false);
+              await _updateDeviceRunningStatus(
+                device.devId!,
+                false,
+                source: 'periodic_stale_offline',
+                streak: streak,
+              );
               shouldReconnect = true;
             }
           } catch (e) {
@@ -316,7 +320,11 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
           OfflineStreakTracker.reset(device.bluetoothId);
           debugPrint('DP105 近期活跃，恢复连接状态: devId=${device.devId}');
           if (!device.isRunning) {
-            await _updateDeviceRunningStatus(device.devId!, true);
+            await _updateDeviceRunningStatus(
+              device.devId!,
+              true,
+              source: 'periodic_dp105_heal',
+            );
           }
           await DeviceListenerService.registerIfRunning(
             device.copyWith(isRunning: true),
@@ -329,8 +337,7 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
         try {
           final isOnline =
               await _connectionChannel.invokeMethod('isDeviceOnline', {
-                    // iOS/Android native now accept either devId or bluetoothId; use bluetoothId to avoid cloud lookup failures.
-                    'deviceId': device.bluetoothId,
+                    'deviceId': device.nativeBleId,
                   })
                   as bool? ??
               false;
@@ -338,7 +345,11 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
           if (isOnline) {
             OfflineStreakTracker.reset(device.bluetoothId);
             debugPrint('设备已在线，更新状态并注册监听器: ${device.devId}');
-            await _updateDeviceRunningStatus(device.devId!, true);
+            await _updateDeviceRunningStatus(
+              device.devId!,
+              true,
+              source: 'periodic_already_online',
+            );
 
             await DeviceListenerService.registerIfRunning(device);
             
@@ -353,19 +364,22 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
         try {
           final connectionResults =
               await _connectionChannel.invokeMethod('connectBleDevices', {
-                    // Use bluetoothId (uuid) so native can connect even when cloud session/home lookup is flaky.
-                    'deviceIds': [device.bluetoothId],
+                    'deviceIds': [device.nativeBleId],
                   })
                   as Map<dynamic, dynamic>?;
 
           if (connectionResults != null) {
             final connected =
-                connectionResults[device.bluetoothId] as bool? ?? false;
-            debugPrint('设备连接结果: ${device.bluetoothId} -> $connected');
+                connectionResults[device.nativeBleId] as bool? ?? false;
+            debugPrint('设备连接结果: ${device.nativeBleId} -> $connected');
 
             if (connected) {
               OfflineStreakTracker.reset(device.bluetoothId);
-              await _updateDeviceRunningStatus(device.devId!, true);
+              await _updateDeviceRunningStatus(
+                device.devId!,
+                true,
+                source: 'periodic_reconnect_ok',
+              );
               debugPrint('设备重连成功: ${device.devId}');
               await DeviceListenerService.registerIfRunning(
                 device.copyWith(isRunning: true),
@@ -378,7 +392,11 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
                 '重连失败但 DP105 仍活跃，恢复 isRunning: ${device.devId}',
               );
               if (!device.isRunning) {
-                await _updateDeviceRunningStatus(device.devId!, true);
+                await _updateDeviceRunningStatus(
+                  device.devId!,
+                  true,
+                  source: 'periodic_reconnect_dp105_heal',
+                );
               }
               await DeviceListenerService.registerIfRunning(
                 device.copyWith(isRunning: true),
@@ -423,7 +441,12 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _updateDeviceRunningStatus(String devId, bool isRunning) async {
+  Future<void> _updateDeviceRunningStatus(
+    String devId,
+    bool isRunning, {
+    required String source,
+    int? streak,
+  }) async {
     try {
       final device = await _dbService.getDeviceByDevId(devId);
 
@@ -437,6 +460,16 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
         debugPrint('设备未记住，跳过更新: devId=$devId');
         return;
       }
+      if (device.isRunning == isRunning) {
+        return;
+      }
+
+      RunningStatusLog.log(
+        source: source,
+        devId: devId,
+        isRunning: isRunning,
+        streak: streak,
+      );
 
       final updatedDevice = device.copyWith(isRunning: isRunning);
       await _dbService.updateDevice(updatedDevice);
@@ -444,8 +477,6 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
       if (isRunning && !device.isRunning) {
         _publishDeviceSymbolThrice(device.bluetoothId, device.position);
       }
-
-      debugPrint('设备运行状态已更新: devId=$devId, isRunning=$isRunning');
     } catch (e) {
       debugPrint('更新设备运行状态失败: $e');
     }

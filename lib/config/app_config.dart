@@ -30,6 +30,19 @@ class AppConfig {
     defaultValue: false,
   );
 
+  /// Console log level: `info` (default) or `debug`.
+  /// Example: `--dart-define=PUMP_LOG_LEVEL=debug`
+  static const String pumpLogLevel = String.fromEnvironment(
+    'PUMP_LOG_LEVEL',
+    defaultValue: 'info',
+  );
+
+  /// Legacy alias; prefer [pumpLogLevel].
+  static const bool verbosePumpLogs = bool.fromEnvironment(
+    'PUMP_VERBOSE_LOGS',
+    defaultValue: false,
+  );
+
   /// Bat_Volt max from firmware (0x1A4 = 420).
   static const int batVoltMax = 0x1A4;
 

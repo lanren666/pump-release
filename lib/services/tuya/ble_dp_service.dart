@@ -8,6 +8,7 @@ import 'dp_constants.dart';
 import 'session_setting_parser.dart';
 import '../../services/database_service.dart';
 import '../diagnostics/app_logger.dart';
+import '../diagnostics/pump_log.dart';
 
 // BLE DP 相关操作
 class BleDpService {
@@ -51,7 +52,7 @@ class BleDpService {
       }
 
       final payload = dps.map((dp) => dp.toJson()).toList();
-      AppLogger.hardware('publishDps invoke', {
+      AppLogger.hardwareDebug('publishDps invoke', {
         'bluetoothId': deviceId,
         'devId': device.devId,
         'dps': payload,
@@ -63,7 +64,7 @@ class BleDpService {
         'timeout': timeout,
       });
       final ok = result == true;
-      AppLogger.hardware(ok ? 'publishDps ok' : 'publishDps failed', {
+      AppLogger.hardwareDebug(ok ? 'publishDps ok' : 'publishDps failed', {
         'devId': device.devId,
         'ok': ok,
       });
@@ -217,13 +218,13 @@ class BleDpService {
                 );
                 for (final dp in reportData.dps) {
                   if (dp.dpId.toString() == DpConstants.sessionStatus) {
-                    debugPrint(
-                      '📡 DP105 sessionStatus [native→flutter] '
-                      'deviceId=${reportData.deviceId} value=${dp.value}',
+                    PumpLog.d(
+                      'DP105',
+                      'native→flutter deviceId=${reportData.deviceId} value=${dp.value}',
                     );
                   }
                 }
-                AppLogger.hardware('dp report from device', {
+                AppLogger.hardwareDebug('dp report from device', {
                   'deviceId': reportData.deviceId,
                   'dpCount': reportData.dps.length,
                   'dps': reportData.dps.map((e) => e.toJson()).toList(),

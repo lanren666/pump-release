@@ -16,6 +16,7 @@ import '../services/tuya/ble_dp_service.dart';
 import '../services/tuya/dp_constants.dart';
 import '../services/tuya/device_listener_service.dart';
 import '../services/tuya/device_reconnect_policy.dart';
+import '../services/tuya/running_status_log.dart';
 import '../l10n/app_localizations.dart';
 import '../services/diagnostics/app_logger.dart';
 import '../services/battery/battery_alert_logic.dart';
@@ -165,7 +166,11 @@ class _HomePageState extends State<HomePage>
           debugPrint(
             '🧭 isRunning 更新来源=checkDevicesOnline: devId=${device.devId}, isOnline=$isOnline',
           );
-          await _updateDeviceRunningStatus(device.devId!, true);
+          await _updateDeviceRunningStatus(
+            device.devId!,
+            true,
+            source: 'checkDevicesOnline',
+          );
           await DeviceListenerService.registerIfRunning(
             device.copyWith(isRunning: true),
           );
@@ -202,7 +207,12 @@ class _HomePageState extends State<HomePage>
           debugPrint(
             '🧭 isRunning 更新来源=checkDevicesOnline(确认离线): devId=${device.devId}',
           );
-          await _updateDeviceRunningStatus(device.devId!, false);
+          await _updateDeviceRunningStatus(
+            device.devId!,
+            false,
+            source: 'checkDevicesOnline_offline',
+            streak: OfflineStreakTracker.currentStreak(device.bluetoothId),
+          );
         }
       }
     } catch (e) {
@@ -473,7 +483,11 @@ class _HomePageState extends State<HomePage>
         debugPrint(
           '🧭 isRunning 更新来源=networkStatusChanged(online): devId=$devId',
         );
-        await _updateDeviceRunningStatus(devId, true);
+        await _updateDeviceRunningStatus(
+          devId,
+          true,
+          source: 'networkStatusChanged_online',
+        );
         return;
       }
 
@@ -503,13 +517,23 @@ class _HomePageState extends State<HomePage>
       debugPrint(
         '🧭 isRunning 更新来源=networkStatusChanged(确认离线): devId=$devId',
       );
-      await _updateDeviceRunningStatus(devId, false);
+      await _updateDeviceRunningStatus(
+        devId,
+        false,
+        source: 'networkStatusChanged_offline',
+        streak: OfflineStreakTracker.currentStreak(device.bluetoothId),
+      );
     } catch (e) {
       debugPrint('❌ 处理 networkStatusChanged 失败: $e');
     }
   }
 
-  Future<void> _updateDeviceRunningStatus(String devId, bool isRunning) async {
+  Future<void> _updateDeviceRunningStatus(
+    String devId,
+    bool isRunning, {
+    required String source,
+    int? streak,
+  }) async {
     try {
       final device = await _dbService.getDeviceByDevId(devId);
 
@@ -520,6 +544,16 @@ class _HomePageState extends State<HomePage>
       if (!device.isRemembered) {
         return;
       }
+      if (device.isRunning == isRunning) {
+        return;
+      }
+
+      RunningStatusLog.log(
+        source: source,
+        devId: devId,
+        isRunning: isRunning,
+        streak: streak,
+      );
 
       final updatedDevice = device.copyWith(isRunning: isRunning);
       await _dbService.updateDevice(updatedDevice);

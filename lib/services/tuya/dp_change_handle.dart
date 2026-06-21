@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../database_service.dart';
 import '../diagnostics/app_logger.dart';
+import '../diagnostics/pump_log.dart';
 import 'dp_constants.dart';
 import 'session_setting_parser.dart';
 import 'ble_dp_service.dart';
@@ -70,15 +71,16 @@ class DpChangeHandle {
             for (final dp in reportData.dps) {
               final dpId = _normalizeDpId(dp.dpId);
               if (dpId == DpConstants.sessionStatus) {
-                debugPrint(
-                  '📡 DP105 sessionStatus [transport] deviceId=${reportData.deviceId} '
+                PumpLog.d(
+                  'DP105',
+                  'transport deviceId=${reportData.deviceId} '
                   'rawType=${dp.value.runtimeType} rawValue=${dp.value}',
                 );
               } else if (dpId == DpConstants.stimulationSucLvl ||
                   dpId == DpConstants.expressionSucLvl) {
-                debugPrint(
-                  '📡 DP$dpId suction [transport] deviceId=${reportData.deviceId} '
-                  'value=${dp.value}',
+                PumpLog.d(
+                  'DP$dpId',
+                  'suction transport deviceId=${reportData.deviceId} value=${dp.value}',
                 );
               }
               handleInstance.handle(reportData.deviceId, dpId, dp.value);
@@ -114,7 +116,7 @@ class DpChangeHandle {
 
   Future<void> handle(String deviceId, String dpId, dynamic dpValue) async {
     dpId = _normalizeDpId(dpId);
-    AppLogger.hardware('dp_handle', {
+    AppLogger.hardwareDebug('dp_handle', {
       'deviceId': deviceId,
       'dpId': dpId,
       'value': dpId == DpConstants.sessionStatus
@@ -183,19 +185,18 @@ class DpChangeHandle {
           final String dpValueStr = dpValue is String
               ? dpValue
               : dpValue.toString();
-          debugPrint(
-            '📥 DP105 sessionStatus [received] deviceId=$deviceId '
-            'hexLen=${dpValueStr.length} hex=$dpValueStr',
+          PumpLog.d(
+            'DP105',
+            'received deviceId=$deviceId hexLen=${dpValueStr.length}',
           );
           final parsedStatus = parseSessionStatus(dpValueStr);
-          debugPrint(
-            '✅ DP105 sessionStatus [parsed] deviceId=$deviceId '
+          PumpLog.d(
+            'DP105',
+            'parsed deviceId=$deviceId '
             'isRunning=${parsedStatus['isRunning']} '
             'timePast=${parsedStatus['timePast']}s '
-            'timePastInPhase=${parsedStatus['timePastInPhase']}s '
             'phase=${parsedStatus['sessionPhase']} '
-            'mode=${parsedStatus['sessionModeName']}'
-            '${parsedStatus['batVolt'] != null ? ' batVolt=${parsedStatus['batVolt']}' : ''}',
+            'mode=${parsedStatus['sessionModeName']}',
           );
 
           DpAliveTracker.touch(deviceId);
@@ -203,7 +204,7 @@ class DpChangeHandle {
           _sessionStatusController.add(
             SessionStatusUpdate(deviceId: deviceId, status: parsedStatus),
           );
-          AppLogger.hardware('sessionStatus parsed', {
+          AppLogger.hardwareDebug('sessionStatus parsed', {
             'deviceId': deviceId,
             'isRunning': parsedStatus['isRunning'],
             'sessionPhase': parsedStatus['sessionPhase'],
@@ -240,7 +241,7 @@ class DpChangeHandle {
         }
         break;
       default:
-        AppLogger.hardware('dp_handle ignored dpId', {
+        AppLogger.hardwareDebug('dp_handle ignored dpId', {
           'deviceId': deviceId,
           'dpId': dpId,
         });

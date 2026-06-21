@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../config/app_config.dart';
+import 'pump_log.dart';
 
 /// Persistent diagnostic logging with size caps. Mirrors to console in debug builds.
 class AppLogger {
@@ -40,6 +41,15 @@ class AppLogger {
 
   static void hardware(String message, [Map<String, Object?>? data]) {
     _log('hw', 'INFO', message, data);
+  }
+
+  /// Verbose hardware path — debug builds only, not persisted when diagnostics off.
+  static void hardwareDebug(String message, [Map<String, Object?>? data]) {
+    if (!PumpLog.isDebugEnabled) return;
+    final payload = data == null || data.isEmpty
+        ? message
+        : '$message ${_safeJson(data)}';
+    PumpLog.d('hw', payload);
   }
 
   static void sdk(String message, [Map<String, Object?>? data]) {
@@ -96,7 +106,10 @@ class AppLogger {
     if (!AppConfig.diagnosticsEnabled) return;
     final line = _formatLine(category, level, message, data);
     _appendLine(line);
-    if (kDebugMode) {
+    if (!kDebugMode) return;
+    if (level == 'ERROR' || level == 'WARN') {
+      debugPrint('[diag] $line');
+    } else if (PumpLog.isDebugEnabled) {
       debugPrint('[diag] $line');
     }
   }
