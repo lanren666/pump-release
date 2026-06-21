@@ -23,6 +23,12 @@ class DpAliveTracker {
   }
 
   /// Visible for tests only.
+  static void setLastAtForTest(String devId, DateTime at) {
+    if (devId.isEmpty) return;
+    _lastAtByDevId[devId] = at;
+  }
+
+  /// Visible for tests only.
   static void clearAll() => _lastAtByDevId.clear();
 }
 

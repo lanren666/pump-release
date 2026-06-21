@@ -153,6 +153,7 @@ class _HomePageState extends State<HomePage>
         if (!isOnline) {
           offlineDevices.add(device);
         } else {
+          NetworkStatusRunningPolicy.onOnline(device.bluetoothId);
           debugPrint(
             '🧭 isRunning 更新来源=checkDevicesOnline: devId=${device.devId}, isOnline=$isOnline',
           );
@@ -165,8 +166,33 @@ class _HomePageState extends State<HomePage>
 
       if (offlineDevices.isNotEmpty) {
         for (final device in offlineDevices) {
+          if (!NetworkStatusRunningPolicy.shouldApplyRunningFalse(
+            dbIsRunning: device.isRunning,
+            bluetoothId: device.bluetoothId,
+          )) {
+            final streak =
+                OfflineStreakTracker.currentStreak(device.bluetoothId);
+            debugPrint(
+              'checkDevicesOnline 离线 $streak/'
+              '${OfflineStreakTracker.confirmThreshold}，暂不改 isRunning: '
+              'devId=${device.devId}, bluetoothId=${device.bluetoothId}',
+            );
+            continue;
+          }
+
+          if (device.devId != null &&
+              DeviceReconnectPolicy.shouldSuppressRunningFalse(
+                devId: device.devId!,
+                isOnline: false,
+              )) {
+            debugPrint(
+              'checkDevicesOnline 确认离线但 DP105 仍活跃，暂不改 isRunning: '
+              'devId=${device.devId}',
+            );
+            continue;
+          }
           debugPrint(
-            '🧭 isRunning 更新来源=checkDevicesOnline: devId=${device.devId}, isOnline=false',
+            '🧭 isRunning 更新来源=checkDevicesOnline(确认离线): devId=${device.devId}',
           );
           await _updateDeviceRunningStatus(device.devId!, false);
         }
@@ -490,7 +516,7 @@ class _HomePageState extends State<HomePage>
       final updatedDevice = device.copyWith(isRunning: isRunning);
       await _dbService.updateDevice(updatedDevice);
 
-      if (isRunning) {
+      if (isRunning && !device.isRunning) {
         _publishDeviceSymbolThrice(device.bluetoothId, device.position);
       }
 

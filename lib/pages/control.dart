@@ -20,6 +20,7 @@ import '../services/tuya/ble_dp_service.dart';
 import '../services/tuya/ble_types.dart';
 import '../services/tuya/dp_change_handle.dart';
 import '../services/tuya/device_reconnect_policy.dart';
+import '../services/tuya/device_listener_service.dart';
 import '../config/app_config.dart';
 import '../config/ble_channels.dart';
 import 'control_timer_display_logic.dart';
@@ -1197,7 +1198,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     final updatedDevice = device.copyWith(isRunning: isRunning);
     await _dbService.updateDevice(updatedDevice);
 
-    if (isRunning) {
+    if (isRunning && !device.isRunning) {
       unawaited(_publishDeviceSymbolThrice(device.bluetoothId, device.position));
     }
 
@@ -1257,9 +1258,14 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       if (connected) {
         await _updateDeviceConnectionStatus(device, true);
         try {
-          await connectionChannel.invokeMethod('registerDeviceListener', {
-            'deviceId': device.bluetoothId,
-          });
+          final bypassOnline = device.devId != null &&
+              DeviceReconnectPolicy.shouldHealRunningFromDp(
+                devId: device.devId!,
+              );
+          await DeviceListenerService.registerIfRunning(
+            device.copyWith(isRunning: true),
+            bypassOnlineCheck: bypassOnline,
+          );
         } catch (e) {
           debugPrint('注册设备监听器失败: $e');
         }

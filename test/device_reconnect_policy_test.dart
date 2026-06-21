@@ -213,5 +213,56 @@ void main() {
         isFalse,
       );
     });
+
+    test('expires after alive window', () {
+      const devId = 'dev-expired';
+      DpAliveTracker.setLastAtForTest(
+        devId,
+        DateTime.now().subtract(const Duration(seconds: 13)),
+      );
+      expect(DpAliveTracker.isRecentlyAlive(devId), isFalse);
+      expect(
+        DeviceReconnectPolicy.shouldSuppressRunningFalse(
+          devId: devId,
+          isOnline: false,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('DpAliveTracker with NetworkStatusRunningPolicy', () {
+    setUp(() {
+      OfflineStreakTracker.clearAll();
+      DpAliveTracker.clearAll();
+    });
+
+    test('network confirms offline but DP alive should not downgrade', () {
+      const devId = 'dev-net-dp';
+      const bleId = 'ble-net-dp';
+      DpAliveTracker.touch(devId);
+
+      expect(
+        NetworkStatusRunningPolicy.shouldApplyRunningFalse(
+          dbIsRunning: true,
+          bluetoothId: bleId,
+        ),
+        isFalse,
+      );
+      expect(
+        NetworkStatusRunningPolicy.shouldApplyRunningFalse(
+          dbIsRunning: true,
+          bluetoothId: bleId,
+        ),
+        isTrue,
+      );
+      expect(
+        DeviceReconnectPolicy.shouldSuppressRunningFalse(
+          devId: devId,
+          isOnline: false,
+        ),
+        isTrue,
+      );
+    });
   });
 }

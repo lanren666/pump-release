@@ -307,7 +307,9 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
         )) {
           OfflineStreakTracker.reset(device.bluetoothId);
           debugPrint('DP105 近期活跃，恢复连接状态: devId=${device.devId}');
-          await _updateDeviceRunningStatus(device.devId!, true);
+          if (!device.isRunning) {
+            await _updateDeviceRunningStatus(device.devId!, true);
+          }
           await DeviceListenerService.registerIfRunning(
             device.copyWith(isRunning: true),
             bypassOnlineCheck: true,
@@ -367,7 +369,9 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
               debugPrint(
                 '重连失败但 DP105 仍活跃，恢复 isRunning: ${device.devId}',
               );
-              await _updateDeviceRunningStatus(device.devId!, true);
+              if (!device.isRunning) {
+                await _updateDeviceRunningStatus(device.devId!, true);
+              }
               await DeviceListenerService.registerIfRunning(
                 device.copyWith(isRunning: true),
                 bypassOnlineCheck: true,
@@ -429,7 +433,7 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
       final updatedDevice = device.copyWith(isRunning: isRunning);
       await _dbService.updateDevice(updatedDevice);
 
-      if (isRunning) {
+      if (isRunning && !device.isRunning) {
         _publishDeviceSymbolThrice(device.bluetoothId, device.position);
       }
 
