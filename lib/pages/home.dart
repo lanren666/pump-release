@@ -127,6 +127,14 @@ class _HomePageState extends State<HomePage>
     }
 
     try {
+      final readyHomeId = await TuyaSdkService.ensureHomeReady(
+        timeout: const Duration(seconds: 15),
+      );
+      if (readyHomeId == null || readyHomeId.isEmpty) {
+        debugPrint('checkDevicesOnline 跳过: 涂鸦 home 未就绪');
+        return;
+      }
+
       final deviceIds = devicesWithDevId.map((d) => d.devId!).toList();
       final onlineStatusMap =
           await connectionChannel.invokeMethod('checkDevicesOnline', {

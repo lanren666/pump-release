@@ -21,6 +21,7 @@ import '../services/tuya/ble_types.dart';
 import '../services/tuya/dp_change_handle.dart';
 import '../services/tuya/device_reconnect_policy.dart';
 import '../services/tuya/device_listener_service.dart';
+import '../services/tuya/tuya_sdk_service.dart';
 import '../config/app_config.dart';
 import '../config/ble_channels.dart';
 import 'control_timer_display_logic.dart';
@@ -1222,6 +1223,18 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
 
     var connected = false;
     try {
+      final readyHomeId = await TuyaSdkService.ensureHomeReady(
+        timeout: const Duration(seconds: 15),
+      );
+      if (readyHomeId == null || readyHomeId.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('涂鸦初始化未完成，请检查网络后重试')),
+          );
+        }
+        return;
+      }
+
       if (device.devId != null &&
           DeviceReconnectPolicy.shouldHealRunningFromDp(devId: device.devId!)) {
         connected = true;

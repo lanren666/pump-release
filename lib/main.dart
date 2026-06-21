@@ -223,6 +223,14 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
         return;
       }
 
+      final readyHomeId = await TuyaSdkService.ensureHomeReady(
+        timeout: const Duration(seconds: 15),
+      );
+      if (readyHomeId == null || readyHomeId.isEmpty) {
+        debugPrint('周期性任务跳过: 涂鸦 home 未就绪');
+        return;
+      }
+
       debugPrint('周期性任务: 检查 ${rememberedDevices.length} 个设备');
 
       for (final device in rememberedDevices) {
