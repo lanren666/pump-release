@@ -598,9 +598,17 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       }
     } else if (isRunning == 1) {
       if (isLeftDevice && !_leftHasStarted) {
-        _clearSessionLowBatteryPromptFlag(_leftDevice?.bluetoothId);
+        // Only reset battery alert flag when battery is not currently low.
+        // If battery is already low a dialog may be showing; clearing the flag
+        // here would allow a second dialog to stack on top (firmware can send
+        // a spurious isRunning=0 then isRunning=1 mid-session).
+        if (!BatteryAlertLogic.isLowBatteryLevel(_leftDevice?.battery ?? 0)) {
+          _clearSessionLowBatteryPromptFlag(_leftDevice?.bluetoothId);
+        }
       } else if (!isLeftDevice && !_rightHasStarted) {
-        _clearSessionLowBatteryPromptFlag(_rightDevice?.bluetoothId);
+        if (!BatteryAlertLogic.isLowBatteryLevel(_rightDevice?.battery ?? 0)) {
+          _clearSessionLowBatteryPromptFlag(_rightDevice?.bluetoothId);
+        }
       }
 
       final appIsRunning = _getCurrentHasStarted();
