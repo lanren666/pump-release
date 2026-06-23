@@ -237,6 +237,29 @@ void main() {
     });
   });
 
+  group('DeviceReconnectPolicy.needsActivationDelay', () {
+    test('null devId requires delay (first-time pairing)', () {
+      expect(
+        DeviceReconnectPolicy.needsActivationDelay(dbDevId: null),
+        isTrue,
+      );
+    });
+
+    test('empty devId requires delay (first-time pairing)', () {
+      expect(
+        DeviceReconnectPolicy.needsActivationDelay(dbDevId: ''),
+        isTrue,
+      );
+    });
+
+    test('non-empty devId skips delay (already paired)', () {
+      expect(
+        DeviceReconnectPolicy.needsActivationDelay(dbDevId: 'abc123'),
+        isFalse,
+      );
+    });
+  });
+
   group('DpAliveTracker with NetworkStatusRunningPolicy', () {
     setUp(() {
       OfflineStreakTracker.clearAll();

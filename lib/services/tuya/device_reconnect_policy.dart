@@ -62,6 +62,12 @@ class DeviceReconnectPolicy {
   /// DB says disconnected but DP105 proves the device is reachable.
   static bool shouldHealRunningFromDp({required String devId}) =>
       DpAliveTracker.isRecentlyAlive(devId);
+
+  /// True when we must wait for the deviceActivated callback to write the devId —
+  /// i.e. the device has no devId in the DB yet (first-time pairing).
+  /// False means it's already paired; DB has the devId and no delay is needed.
+  static bool needsActivationDelay({required String? dbDevId}) =>
+      (dbDevId ?? '').isEmpty;
 }
 
 /// Debounces [isRunning=false] when periodic probes flicker offline briefly.

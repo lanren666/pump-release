@@ -1411,9 +1411,12 @@ class _HomePageState extends State<HomePage>
         String? finalDevId = returnedDevId;
         
         if (finalDevId == null || finalDevId.isEmpty) {
-          // 等待一小段时间，确保deviceActivated事件处理完成（更新devId）
-          await Future.delayed(const Duration(milliseconds: 300));
-          
+          // 已配对设备（DB 里有 devId）不需要等；只有首次配对才需要等 deviceActivated 写入 devId
+          final preCheck = await _dbService.getDeviceByBluetoothId(device.bluetoothId);
+          if (DeviceReconnectPolicy.needsActivationDelay(dbDevId: preCheck?.devId)) {
+            await Future.delayed(const Duration(milliseconds: 300));
+          }
+
           // 从数据库重新读取devId，因为_updateDeviceDevId会先更新数据库
           final dbDevice = await _dbService.getDeviceByBluetoothId(device.bluetoothId);
           final latestDevId = dbDevice?.devId;
@@ -1493,7 +1496,8 @@ class _HomePageState extends State<HomePage>
         );
         _devicePendingConnectLowBatteryCheck = savedDevice ?? newDevice;
         if (savedDevice != null) {
-          await DeviceListenerService.registerIfRunning(savedDevice);
+          // 刚连上的设备跳过 isDeviceOnline 检查，native 刚说连接成功设备必然在线
+          await DeviceListenerService.registerIfRunning(savedDevice, bypassOnlineCheck: true);
         }
 
         return true;
