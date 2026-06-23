@@ -55,8 +55,9 @@ extension Date {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        // FlutterAppDelegate 已在 super.application 内完成插件注册；切勿重复调用
-        // GeneratedPluginRegistrant.register，否则二次冷启动会在 PathProviderPlugin 等处 SIGSEGV。
+        // super.application 不会自动注册插件，必须在此处显式注册。
+        // 注意：super 之前调用，确保插件 handler 在 Flutter engine 启动前就绪。
+        GeneratedPluginRegistrant.register(with: self)
         let result = super.application(application, didFinishLaunchingWithOptions: launchOptions)
 
         // 初始化 CBCentralManager（需要 delegate 来获取状态更新）
