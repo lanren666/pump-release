@@ -572,17 +572,17 @@ class _CustomFlowPageState extends State<CustomFlowPage> {
               ),
               child: Builder(
                 builder: (context) {
-                  final maxForPhase = _maxDurationForPhase(index);
+                  const fixedMax = _maxTotalMinutes;
                   final minForPhase = _minPhaseDuration.toDouble();
-                  final span = maxForPhase - _minPhaseDuration;
+                  final span = fixedMax - _minPhaseDuration;
                   return Slider(
                     value: phase.duration
-                        .clamp(_minPhaseDuration, maxForPhase)
+                        .clamp(_minPhaseDuration, fixedMax)
                         .toDouble(),
                     min: minForPhase,
-                    max: maxForPhase.toDouble(),
-                    divisions: span > 0 ? span : null,
-                    onChanged: _isReadOnly || span <= 0
+                    max: fixedMax.toDouble(),
+                    divisions: span,
+                    onChanged: _isReadOnly
                         ? null
                         : (double value) {
                             setState(() {
