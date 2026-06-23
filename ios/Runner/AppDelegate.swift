@@ -853,12 +853,20 @@ extension Date {
         // 检查设备是否需要配网
         if let deviceInfo = scannedDevices[uuid] {
             if !deviceInfo.isActive {
-                print("📱 设备未配网，需要先激活: \(uuid)")
-                // 需要先配网
-                activeDevice(deviceInfo: deviceInfo, homeId: homeId, deviceId: deviceId, uuid: uuid, productKey: productKey, result: result)
+                // 设备广播 isActive=false（如电池重插后重新进入配对模式），但可能仍绑定在当前 home。
+                // 先查 home 列表：找到 devId 说明已配对，直接连接；找不到才走激活流程。
+                getDeviceByUuid(uuid: uuid) { [weak self] existingDevice in
+                    guard let self = self else { return }
+                    if let devId = existingDevice?.devId, !devId.isEmpty {
+                        print("🔄 设备已在 home，跳过激活直接连接 (isActive=false): \(uuid), devId=\(devId)")
+                        self.connectDeviceDirectly(deviceId: deviceId, uuid: uuid, productKey: productKey, devId: devId, result: result)
+                    } else {
+                        print("📱 设备未配网，需要先激活: \(uuid)")
+                        self.activeDevice(deviceInfo: deviceInfo, homeId: homeId, deviceId: deviceId, uuid: uuid, productKey: productKey, result: result)
+                    }
+                }
             } else {
                 print("✅ 设备已配网，直接连接: \(uuid)")
-                // 设备已配网，直接连接
                 connectDeviceDirectly(deviceId: deviceId, uuid: uuid, productKey: productKey, devId: nil, result: result)
             }
         } else {
