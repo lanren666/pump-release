@@ -934,7 +934,10 @@ class MainActivity : FlutterActivity(), LocationListener {
         android.util.Log.d("MainActivity", "📝 注册设备监听器: devId=$devId")
         
         val mDevice: IThingDevice? = ThingHomeSdk.newDeviceInstance(devId)
-        
+
+        // 先取消旧监听器，避免多次调用时重复堆叠（BUG-4 防护）
+        mDevice?.unRegisterDevListener()
+
         mDevice?.registerDevListener(object : IDevListener {
 
             /**
@@ -1090,35 +1093,8 @@ class MainActivity : FlutterActivity(), LocationListener {
             }
         })
 
-        val dps: Map<String, Any>? = ThingHomeSdk.getDataInstance().getDps(devId)
-        
-        if (dps != null) {
-            android.util.Log.d("MainActivity", "📊 获取设备 DPS 数据: devId=$devId")
-            android.util.Log.d("MainActivity", "📊 DPS 数据内容: $dps")
-            // 格式化打印每个 DPS 项
-            dps.forEach { (key, value) ->
-                android.util.Log.d("MainActivity", "   - DPS[$key] = $value (类型: ${value.javaClass.simpleName})")
-                
-                // 通过 getDp 方法获取单个 DP 的详细信息
-                mDevice?.getDp(key, object : IResultCallback {
-                    override fun onError(errorCode: String, errorMsg: String) {
-                        android.util.Log.e(
-                            "MainActivity",
-                            "❌ 获取 DP[$key] 失败: code=$errorCode, error=$errorMsg"
-                        )
-                    }
-
-                    override fun onSuccess() {
-                        android.util.Log.d(
-                            "MainActivity",
-                            "✅ 成功获取 DP[$key] 的值: $value"
-                        )
-                    }
-                })
-            }
-        } else {
-            android.util.Log.w("MainActivity", "⚠️ 获取 DPS 数据为空: devId=$devId")
-        }
+        // getDp() 循环已移除：固件连接后会主动上报所有 DP（onDpUpdate 回调），
+        // 主动查询每个 DP 会在连接瞬间向固件发送大量 BLE 查询包，属于多余操作。
         
         android.util.Log.d("MainActivity", "✅ 设备监听器注册完成: devId=$devId")
     }
