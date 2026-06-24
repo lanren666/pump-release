@@ -48,4 +48,18 @@ class TimerDisplayCacheLogic {
     }
     return const Duration(minutes: 2);
   }
+
+  /// Returns true when the cache has been loaded and is safe to render.
+  ///
+  /// Custom mode needs at least one phase in the cache before showing values.
+  /// Non-custom modes use fixed values and are always ready.
+  static bool isCacheReady({
+    required SessionMode sessionMode,
+    required List<Phase> cachedCustomPhases,
+  }) {
+    if (sessionMode == SessionMode.custom) {
+      return cachedCustomPhases.isNotEmpty;
+    }
+    return true;
+  }
 }

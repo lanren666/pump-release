@@ -229,6 +229,63 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // isCacheReady
+  // ---------------------------------------------------------------------------
+  group('TimerDisplayCacheLogic.isCacheReady', () {
+    final somePhases = [
+      Phase(mode: PhaseMode.stimulation, duration: 2),
+      Phase(mode: PhaseMode.expression, duration: 15),
+    ];
+
+    test('non-custom modes are always ready, even with empty cache', () {
+      for (final mode in [
+        SessionMode.defaultMode,
+        SessionMode.beginner,
+        SessionMode.boostMilk,
+      ]) {
+        expect(
+          TimerDisplayCacheLogic.isCacheReady(
+            sessionMode: mode,
+            cachedCustomPhases: [],
+          ),
+          isTrue,
+          reason: '$mode should be ready without cache',
+        );
+      }
+    });
+
+    test('custom mode with empty cache is NOT ready', () {
+      expect(
+        TimerDisplayCacheLogic.isCacheReady(
+          sessionMode: SessionMode.custom,
+          cachedCustomPhases: [],
+        ),
+        isFalse,
+      );
+    });
+
+    test('custom mode with loaded cache is ready', () {
+      expect(
+        TimerDisplayCacheLogic.isCacheReady(
+          sessionMode: SessionMode.custom,
+          cachedCustomPhases: somePhases,
+        ),
+        isTrue,
+      );
+    });
+
+    test('custom mode: single-phase cache is ready', () {
+      expect(
+        TimerDisplayCacheLogic.isCacheReady(
+          sessionMode: SessionMode.custom,
+          cachedCustomPhases: [Phase(mode: PhaseMode.stimulation, duration: 5)],
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // 一致性：三个函数的返回值对 defaultCustomPhases 一致
   // ---------------------------------------------------------------------------
   group('consistency with CustomFlowConfig.defaultCustomPhases', () {

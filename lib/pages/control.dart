@@ -120,7 +120,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   int _totalPhase = 2;
   Duration _phaseDuration = const Duration(minutes: 2);
   String _customFlowDescription = '2min -> 15min';
-  List<Phase> _cachedCustomPhases = CustomFlowConfig.defaultCustomPhases;
+  List<Phase> _cachedCustomPhases = [];
   final DatabaseService _dbService = DatabaseService();
 
   // 吸力级别配置的 DB key，用于记忆上次设置
@@ -3004,6 +3004,15 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
 
   Widget _buildTimerDisplay() {
     final currentHasStarted = _getTimerDisplayHasStarted();
+
+    // Cache not yet loaded — show blank matching old FutureBuilder behavior.
+    if (!currentHasStarted &&
+        !TimerDisplayCacheLogic.isCacheReady(
+          sessionMode: _sessionMode,
+          cachedCustomPhases: _cachedCustomPhases,
+        )) {
+      return const SizedBox.shrink();
+    }
     final displayMinutes = currentHasStarted
         ? _elapsedTime.inMinutes.toString().padLeft(2, '0')
         : '00';
