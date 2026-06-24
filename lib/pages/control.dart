@@ -147,7 +147,6 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   final Map<String, Timer> _pendingCheckTimers = {};
   static const int _toleranceDelayMs = 2500;
   static const int _bothTimeSyncThresholdSeconds = 30; // both 模式时间容差阈值（秒）
-  static const int _bothBleCommandGapMs = 500;
   static const int _bothStopBeforeStartDelayMs = 800;
   static const int _bothSideKickCooldownMs = 8000;
   static const int _bothSyncActionGraceMs = 5000;
@@ -1046,7 +1045,37 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       }
     }
 
-    // DP 106/108: apply device-reported suction as-is (no mode filter, no debounce).
+    // DP 106/108: 防止设备旧回声覆盖用户操作（800ms 窗口内忽略与期望不符的旧值）
+    if (update.dpId == DpConstants.stimulationSucLvl ||
+        update.dpId == DpConstants.expressionSucLvl) {
+      final deviceId = update.deviceId;
+      final deviceOperations = _recentUserOperations[deviceId];
+      if (deviceOperations != null) {
+        final userOp = deviceOperations[update.dpId];
+        if (userOp != null) {
+          final timeSinceOp = DateTime.now().difference(userOp.timestamp).inMilliseconds;
+          if (timeSinceOp < _ignoreDeviceUpdateWindowMs) {
+            final deviceValue = (update.value as num).toDouble();
+            if ((deviceValue - userOp.expectedValue).abs() > 0.1) {
+              final currentValue = update.dpId == DpConstants.stimulationSucLvl
+                  ? (isLeft ? _leftStimulationSuctionLevel : _rightStimulationSuctionLevel)
+                  : (isLeft ? _leftExpressionSuctionLevel : _rightExpressionSuctionLevel);
+              final currentDiff = (currentValue - userOp.expectedValue).abs();
+              final deviceDiff = (deviceValue - userOp.expectedValue).abs();
+              if (currentDiff < deviceDiff) {
+                return; // 当前 UI 已更接近用户期望，忽略设备旧回声
+              }
+            } else {
+              deviceOperations.remove(update.dpId);
+              if (deviceOperations.isEmpty) _recentUserOperations.remove(deviceId);
+            }
+          } else {
+            deviceOperations.remove(update.dpId);
+            if (deviceOperations.isEmpty) _recentUserOperations.remove(deviceId);
+          }
+        }
+      }
+    }
 
     // 混合模式 hybrid：防止设备旧状态覆盖用户操作
     if (update.dpId == DpConstants.stimulationHybrid) {
@@ -3729,10 +3758,6 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _gapBetweenBothBleCommands() async {
-    await Future.delayed(const Duration(milliseconds: _bothBleCommandGapMs));
-  }
-
   Future<void> _startBothSessionSequentially({
     required List<Map<String, int>> modeDurations,
     required int totalPhase,
@@ -3887,7 +3912,6 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       modeDurations,
     );
     PumpLog.i('BOTH_KICK', 'DP101 ok=$ok side=${isLeft ? 'left' : 'right'}');
-    await _gapBetweenBothBleCommands();
     _recordPendingOperation(device, 1);
     await BleDpService.publishDp(device.bluetoothId, DpConstants.startN, true);
     PumpLog.i('BOTH_KICK', 'startN 已下发 side=${isLeft ? 'left' : 'right'}');
