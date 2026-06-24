@@ -30,6 +30,7 @@ import '../config/ble_channels.dart';
 import 'control_timer_display_logic.dart';
 import 'control_hybrid_pattern_logic.dart';
 import 'control_types.dart';
+import 'timer_display_cache_logic.dart';
 import 'widgets/unified_timer_card.dart';
 import 'widgets/low_battery_dialog.dart';
 import '../services/battery/battery_alert_logic.dart';
@@ -119,6 +120,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   int _totalPhase = 2;
   Duration _phaseDuration = const Duration(minutes: 2);
   String _customFlowDescription = '2min -> 15min';
+  List<Phase> _cachedCustomPhases = CustomFlowConfig.defaultCustomPhases;
   final DatabaseService _dbService = DatabaseService();
 
   // 吸力级别配置的 DB key，用于记忆上次设置
@@ -1527,9 +1529,10 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
 
   Future<void> _loadCustomFlowDescription() async {
     final phases = await CustomFlowConfig.loadPhasesForSelectedTab(_dbService);
-    setState(
-      () => _customFlowDescription = CustomFlowConfig.formatDescription(phases),
-    );
+    setState(() {
+      _customFlowDescription = CustomFlowConfig.formatDescription(phases);
+      _cachedCustomPhases = phases;
+    });
   }
 
   List<Map<String, int>> _phasesToModeDurations(List<Phase> phases) {
@@ -2148,13 +2151,6 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     );
   }
 
-  bool _getTimerInitialStateIsLeft() {
-    return ControlTimerDisplayLogic.timerInitialStateUsesLeftDevice(
-      isLeftSelected: _selectedPump == PumpSelection.left,
-      isBothSelected: _selectedPump == PumpSelection.both,
-    );
-  }
-
   /// 将主展示时间同步为左侧设备时间（仅在 both 非独立模式生效）。
   void _syncBothDisplayFromLeft() {
     if (!_shouldShowBothUsingLeft()) return;
@@ -2163,21 +2159,6 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     _currentPhase = _leftCurrentPhase;
     _totalPhase = _leftTotalPhase;
     _phaseDuration = _leftPhaseDuration;
-  }
-
-  Future<IntensityMode> _getDisplayIntensityMode() async {
-    final hasStarted = _getTimerDisplayHasStarted();
-    if (!hasStarted) {
-      final firstPhaseMode = await _getFirstPhaseIntensityMode();
-      return firstPhaseMode ?? IntensityMode.stimulation;
-    }
-    return _getCurrentIntensityMode();
-  }
-
-  Future<Map<String, dynamic>> _getTimerDisplayData() async {
-    final totalPhases = await _getTotalPhases();
-    final displayMode = await _getDisplayIntensityMode();
-    return {'totalPhases': totalPhases, 'displayMode': displayMode};
   }
 
   /// Timer card shows hybrid whenever the hybrid switch is on, matching DP/session
@@ -3030,47 +3011,39 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         ? (_elapsedTime.inSeconds % 60).toString().padLeft(2, '0')
         : '00';
 
-    Future<Map<String, dynamic>?> getInitialStateFuture() async {
-      if (currentHasStarted) return null;
-      return _getInitialDeviceState(_getTimerInitialStateIsLeft());
-    }
+    final displayMode = currentHasStarted
+        ? _getCurrentIntensityMode()
+        : TimerDisplayCacheLogic.firstPhaseMode(
+            sessionMode: _sessionMode,
+            cachedCustomPhases: _cachedCustomPhases,
+          );
 
-    return FutureBuilder<Map<String, dynamic>>(
-      future: _getTimerDisplayData(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const SizedBox.shrink();
-        }
-        final data = snapshot.data!;
-        final displayMode = data['displayMode'] as IntensityMode;
-        final currentPhase = currentHasStarted ? _currentPhase : 1;
-        final effectiveTotalPhases = currentHasStarted
-            ? _totalPhase
-            : (data['totalPhases'] as int);
-        return FutureBuilder<Map<String, dynamic>?>(
-          future: getInitialStateFuture(),
-          builder: (context, initialStateSnapshot) {
-            final effectivePhaseDuration = currentHasStarted
-                ? _phaseDuration
-                : (initialStateSnapshot.data?['phaseDuration'] as Duration? ??
-                      _phaseDuration);
+    final effectiveTotalPhases = currentHasStarted
+        ? _totalPhase
+        : TimerDisplayCacheLogic.totalPhases(
+            sessionMode: _sessionMode,
+            cachedCustomPhases: _cachedCustomPhases,
+          );
 
-            return UnifiedTimerCard(
-              displayMode: displayMode,
-              displayMinutes: displayMinutes,
-              displaySeconds: displaySeconds,
-              currentPhase: currentPhase,
-              effectiveTotalPhases: effectiveTotalPhases,
-              currentHasStarted: currentHasStarted,
-              effectivePhaseDuration: effectivePhaseDuration,
-              elapsedTimeInPhase: _elapsedTimeInPhase,
-              maxDuration: _maxDuration,
-              deviceMaxDuration: _deviceMaxDuration,
-              showHybridDisplay: _shouldShowHybridTimerDisplay(),
-            );
-          },
-        );
-      },
+    final effectivePhaseDuration = currentHasStarted
+        ? _phaseDuration
+        : TimerDisplayCacheLogic.initialPhaseDuration(
+            sessionMode: _sessionMode,
+            cachedCustomPhases: _cachedCustomPhases,
+          );
+
+    return UnifiedTimerCard(
+      displayMode: displayMode,
+      displayMinutes: displayMinutes,
+      displaySeconds: displaySeconds,
+      currentPhase: currentHasStarted ? _currentPhase : 1,
+      effectiveTotalPhases: effectiveTotalPhases,
+      currentHasStarted: currentHasStarted,
+      effectivePhaseDuration: effectivePhaseDuration,
+      elapsedTimeInPhase: _elapsedTimeInPhase,
+      maxDuration: _maxDuration,
+      deviceMaxDuration: _deviceMaxDuration,
+      showHybridDisplay: _shouldShowHybridTimerDisplay(),
     );
   }
 
