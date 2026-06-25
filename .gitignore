@@ -55,3 +55,17 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# APK release builds (binary artifacts, not source)
+*.apk
+
+# Crash and debug logs (generated at runtime)
+.crashlogs/
+.crashlogs_secondopen/
+.debug_logs/
+
+# Cursor IDE settings
+.cursor/
+
+# Stale/obsolete assets
+assets/images/logo_old.png
