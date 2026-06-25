@@ -67,6 +67,9 @@ class MainActivity : FlutterActivity(), LocationListener {
     // 设备连接状态管理
     private val deviceConnectionStates = mutableMapOf<String, String>() // deviceId -> state
     private val scannedDevices = mutableMapOf<String, ScanDeviceBean>() // uuid -> ScanDeviceBean
+    // 已注册 DP 监听器的 IThingDevice 实例（devId -> instance）
+    // 每次重新注册前先对旧实例调用 unRegisterDevListener，防止 listener 无限堆叠
+    private val registeredDeviceListeners = mutableMapOf<String, IThingDevice>()
 
     private fun hasBluetoothPermissions(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -932,11 +935,15 @@ class MainActivity : FlutterActivity(), LocationListener {
     // 注册设备监听器
     private fun registerDeviceListener(devId: String) {
         android.util.Log.d("MainActivity", "📝 注册设备监听器: devId=$devId")
-        
-        val mDevice: IThingDevice? = ThingHomeSdk.newDeviceInstance(devId)
 
-        // 先取消旧监听器，避免多次调用时重复堆叠（BUG-4 防护）
-        mDevice?.unRegisterDevListener()
+        // 先对旧实例调用 unRegisterDevListener，防止每次创建新实例导致 listener 无限堆叠
+        // 注意：对新实例调用 unRegister 是 no-op，必须对持有 listener 的旧实例调用
+        registeredDeviceListeners[devId]?.unRegisterDevListener()
+
+        val mDevice: IThingDevice? = ThingHomeSdk.newDeviceInstance(devId)
+        if (mDevice != null) {
+            registeredDeviceListeners[devId] = mDevice
+        }
 
         mDevice?.registerDevListener(object : IDevListener {
 
@@ -1029,8 +1036,8 @@ class MainActivity : FlutterActivity(), LocationListener {
                 }
 
                 if (online === false) {
-                    val mDevice: IThingDevice? = ThingHomeSdk.newDeviceInstance(devId)
-                    mDevice?.unRegisterDevListener();
+                    registeredDeviceListeners[devId]?.unRegisterDevListener()
+                    registeredDeviceListeners.remove(devId)
                 }
 
                 mainHandler.post {
