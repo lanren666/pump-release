@@ -1195,6 +1195,17 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       } catch (e) {
         _rightDevice = null;
       }
+
+      // 仅当双侧都在运行时恢复 hasStarted，防止从蓝牙界面返回后第一条
+      // DP105 误触发"硬件手动启动"逻辑把 Both 模式切成单侧。
+      // 若只有单侧在运行，保留原自动切换行为（单侧用户导航返回后
+      // DP105 仍会正确把 _selectedPump 切回对应侧）。
+      final leftRunning = _leftDevice?.isRunning == true;
+      final rightRunning = _rightDevice?.isRunning == true;
+      if (leftRunning && rightRunning) {
+        if (!_leftHasStarted) _leftHasStarted = true;
+        if (!_rightHasStarted) _rightHasStarted = true;
+      }
     });
   }
 
