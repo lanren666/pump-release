@@ -30,6 +30,7 @@ import '../config/ble_channels.dart';
 import 'control_timer_display_logic.dart';
 import 'control_hybrid_pattern_logic.dart';
 import 'control_types.dart';
+import 'session_control_throttle_logic.dart';
 import 'timer_display_cache_logic.dart';
 import 'widgets/unified_timer_card.dart';
 import 'widgets/low_battery_dialog.dart';
@@ -159,6 +160,11 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
 
   /// Prevents duplicate in-session low-battery dialogs per device per session.
   final Set<String> _sessionRunningLowBatteryShown = {};
+
+  // 启动/暂停/切换 节流：防止快速连击向固件发送过多指令
+  DateTime? _lastSessionControlDispatch;
+  static const int _sessionControlThrottleMs =
+      SessionControlThrottleLogic.defaultThresholdMs;
 
   // 用于防止设备返回的旧状态覆盖用户操作
   // 记录用户最近的操作：设备ID -> (期望值, 操作时间)
@@ -1768,6 +1774,22 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       timestamp: DateTime.now(),
       dpId: dpId,
     );
+  }
+
+  /// Returns true and records the dispatch time when a session control command
+  /// (start / pause / switch) is allowed through.  Returns false and drops the
+  /// command when the previous dispatch was less than [_sessionControlThrottleMs]
+  /// ago, preventing firmware overload from rapid taps.
+  bool _guardSessionControl() {
+    if (!SessionControlThrottleLogic.shouldDispatch(
+      lastDispatch: _lastSessionControlDispatch,
+      now: DateTime.now(),
+      thresholdMs: _sessionControlThrottleMs,
+    )) {
+      return false;
+    }
+    _lastSessionControlDispatch = DateTime.now();
+    return true;
   }
 
   void _adjustSuctionLevel(int delta) {
@@ -3963,6 +3985,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                 onPressed: isDisabled
                     ? null
                     : () async {
+                        if (!_guardSessionControl()) return;
                         // 如果是从未开始状态，根据 session settings 设置强度模式
                         final currentHasStarted = _getCurrentHasStarted();
                         final currentIsRunning = _getCurrentIsRunning();
@@ -4164,7 +4187,11 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
               child: OutlinedButton.icon(
                 onPressed: (isDisabled || !_getCurrentHasStarted())
                     ? null
-                    : () => _publishDpToDevices(DpConstants.switchN, true),
+                    : () {
+                        if (_guardSessionControl()) {
+                          _publishDpToDevices(DpConstants.switchN, true);
+                        }
+                      },
                 icon: Icon(
                   Icons.refresh_outlined,
                   size: ResponsiveText.getSize(context, 26),
