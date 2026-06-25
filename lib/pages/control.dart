@@ -163,7 +163,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   // 用于防止设备返回的旧状态覆盖用户操作
   // 记录用户最近的操作：设备ID -> (期望值, 操作时间)
   final Map<String, Map<String, _UserOperation>> _recentUserOperations = {};
-  static const int _ignoreDeviceUpdateWindowMs = 300; // 用户操作后300ms内忽略不一致的设备更新
+  static const int _ignoreDeviceUpdateWindowMs = 1500; // 用户操作后1500ms内忽略设备回声（BLE确认可能延迟>300ms）
 
   @override
   void initState() {
@@ -1045,7 +1045,8 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       }
     }
 
-    // DP 106/108: 防止设备旧回声覆盖用户操作（800ms 窗口内忽略与期望不符的旧值）
+    // DP 106/108: 用户操作后 1500ms 内屏蔽设备所有回声
+    // 原因：SDK 可能先发旧值再发确认值，若在"确认值到达时清除 guard"，随后的旧 echo 就无保护
     if (update.dpId == DpConstants.stimulationSucLvl ||
         update.dpId == DpConstants.expressionSucLvl) {
       final deviceId = update.deviceId;
@@ -1055,20 +1056,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         if (userOp != null) {
           final timeSinceOp = DateTime.now().difference(userOp.timestamp).inMilliseconds;
           if (timeSinceOp < _ignoreDeviceUpdateWindowMs) {
-            final deviceValue = (update.value as num).toDouble();
-            if ((deviceValue - userOp.expectedValue).abs() > 0.1) {
-              final currentValue = update.dpId == DpConstants.stimulationSucLvl
-                  ? (isLeft ? _leftStimulationSuctionLevel : _rightStimulationSuctionLevel)
-                  : (isLeft ? _leftExpressionSuctionLevel : _rightExpressionSuctionLevel);
-              final currentDiff = (currentValue - userOp.expectedValue).abs();
-              final deviceDiff = (deviceValue - userOp.expectedValue).abs();
-              if (currentDiff < deviceDiff) {
-                return; // 当前 UI 已更接近用户期望，忽略设备旧回声
-              }
-            } else {
-              deviceOperations.remove(update.dpId);
-              if (deviceOperations.isEmpty) _recentUserOperations.remove(deviceId);
-            }
+            return; // 窗口内一律忽略设备回声，UI 已乐观更新
           } else {
             deviceOperations.remove(update.dpId);
             if (deviceOperations.isEmpty) _recentUserOperations.remove(deviceId);
