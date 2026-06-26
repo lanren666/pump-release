@@ -2145,6 +2145,35 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     }
   }
 
+  // 在 fresh-start 时将计时显示变量清零，避免重新启动时短暂显示上一次的残留时间。
+  // 只应在 !currentHasStarted && !currentIsRunning 的分支内调用；
+  // 暂停→恢复路径不调用此方法，确保暂停时间得以保留。
+  void _resetCurrentElapsedTime() {
+    _elapsedTime = Duration.zero;
+    _elapsedTimeInPhase = Duration.zero;
+    _currentPhase = 1;
+    switch (_selectedPump) {
+      case PumpSelection.left:
+        _leftElapsedTime = Duration.zero;
+        _leftElapsedTimeInPhase = Duration.zero;
+        _leftCurrentPhase = 1;
+        break;
+      case PumpSelection.right:
+        _rightElapsedTime = Duration.zero;
+        _rightElapsedTimeInPhase = Duration.zero;
+        _rightCurrentPhase = 1;
+        break;
+      case PumpSelection.both:
+        _leftElapsedTime = Duration.zero;
+        _leftElapsedTimeInPhase = Duration.zero;
+        _leftCurrentPhase = 1;
+        _rightElapsedTime = Duration.zero;
+        _rightElapsedTimeInPhase = Duration.zero;
+        _rightCurrentPhase = 1;
+        break;
+    }
+  }
+
   /// 同步显示变量：根据当前选择的泵，将对应的状态同步到显示变量
   /// [newSelection] 新的泵选择，如果为 null 则使用当前的 _selectedPump
   void _syncDisplayVariables([PumpSelection? newSelection]) {
@@ -4017,6 +4046,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                             setState(() {
                               _bothStartInProgress = true;
                               _setCurrentHasStarted(true);
+                              _resetCurrentElapsedTime();
                             });
                             _bothNotSynchronizedCount = 0;
                             _bothDesyncSince = null;
@@ -4066,6 +4096,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                             );
                             _setCurrentHasStarted(true);
                             _setCurrentIsRunning(true);
+                            _resetCurrentElapsedTime();
                           });
 
                           // setState 之后执行异步操作
