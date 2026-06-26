@@ -29,6 +29,7 @@ import '../config/app_config.dart';
 import '../config/ble_channels.dart';
 import 'control_timer_display_logic.dart';
 import 'control_hybrid_pattern_logic.dart';
+import 'control_both_session_end_logic.dart';
 import 'control_types.dart';
 import 'session_control_throttle_logic.dart';
 import 'timer_display_cache_logic.dart';
@@ -439,11 +440,22 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             ? _rightIsRunning
             : _leftIsRunning;
         if (otherSideRunning) {
-          await _kickBothSideSessionIfNeeded(
-            isLeft: isLeftDevice,
-            reason: 'dp105_stopped_while_other_running',
-          );
-          return;
+          // Only kick when the stop is unexpected (mid-session crash / BLE drop).
+          // When both devices finish their configured session time they stop
+          // seconds apart; the first to stop must be cleaned up, not restarted.
+          if (ControlBothSessionEndLogic.shouldKickOnBothStop(
+            otherSideRunning: otherSideRunning,
+            timePast: timePast,
+            maxTimeMinutes: maxTime,
+          )) {
+            await _kickBothSideSessionIfNeeded(
+              isLeft: isLeftDevice,
+              reason: 'dp105_stopped_while_other_running',
+            );
+            return;
+          }
+          // Natural session end: fall through to clean up this side normally.
+          // The other side will clean up when it sends its own isRunning=0.
         }
         if (AppConfig.tuyaEnabled) {
           final modeDurations = await _getModeDurations();
