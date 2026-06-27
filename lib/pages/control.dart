@@ -30,6 +30,7 @@ import '../config/ble_channels.dart';
 import 'control_timer_display_logic.dart';
 import 'control_hybrid_pattern_logic.dart';
 import 'control_both_session_end_logic.dart';
+import 'control_db_refresh_kick_logic.dart';
 import 'control_types.dart';
 import 'session_control_throttle_logic.dart';
 import 'timer_display_cache_logic.dart';
@@ -1262,7 +1263,12 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             (_leftDevice != null && newLeftDevice == null && _leftHasStarted)) {
           if (_selectedPump == PumpSelection.both &&
               _rightHasStarted &&
-              _rightIsRunning) {
+              _rightIsRunning &&
+              ControlDbRefreshKickLogic.shouldKickOnDbOffline(
+                elapsedSeconds: _leftElapsedTime.inSeconds,
+                deviceMaxDuration: _deviceMaxDuration,
+                uiMaxDuration: _maxDuration,
+              )) {
             debugPrint(
               '⚠️ Both 运行中左泵 DB 瞬断，保留 started 并补发 start',
             );
@@ -1304,7 +1310,12 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                 _rightHasStarted)) {
           if (_selectedPump == PumpSelection.both &&
               _leftHasStarted &&
-              _leftIsRunning) {
+              _leftIsRunning &&
+              ControlDbRefreshKickLogic.shouldKickOnDbOffline(
+                elapsedSeconds: _rightElapsedTime.inSeconds,
+                deviceMaxDuration: _deviceMaxDuration,
+                uiMaxDuration: _maxDuration,
+              )) {
             debugPrint(
               '⚠️ Both 运行中右泵 DB 瞬断，保留 started 并补发 start',
             );
@@ -3014,8 +3025,11 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                         if (newValue != null) {
                           setState(() {
                             _maxDuration = newValue;
-                            // 保存到当前泵选择对应的状态
-                            _pumpMaxDurations[_selectedPump] = newValue;
+                            // 同步写入所有 selection，防止 _syncDisplayVariables
+                            // 切换（如 individual mode）时读到未更新的旧默认值
+                            _pumpMaxDurations[PumpSelection.left] = newValue;
+                            _pumpMaxDurations[PumpSelection.right] = newValue;
+                            _pumpMaxDurations[PumpSelection.both] = newValue;
                           });
                         }
                       },
