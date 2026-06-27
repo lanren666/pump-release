@@ -14,6 +14,20 @@ import 'control_both_session_end_logic.dart';
 class ControlDbRefreshKickLogic {
   const ControlDbRefreshKickLogic._();
 
+  /// Resolves the elapsed seconds to pass to [shouldKickOnDbOffline] when
+  /// the widget's elapsed-time counter has not yet advanced (e.g., immediately
+  /// after navigation-resume before the first DP-105 arrives).
+  ///
+  /// Mirrors [ControlBothSessionEndLogic.effectiveTimePast] but for the
+  /// DB-refresh path: [elapsedSeconds] comes from `_leftElapsedTime.inSeconds`
+  /// and [lastRunningTimePast] from `_leftLastRunningTimePast`.
+  static int effectiveElapsedSeconds({
+    required int elapsedSeconds,
+    required int lastRunningTimePast,
+  }) {
+    return elapsedSeconds > 0 ? elapsedSeconds : lastRunningTimePast;
+  }
+
   /// Returns the effective max session duration (minutes) to use for
   /// natural-end detection in the DB-refresh path.
   ///

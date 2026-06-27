@@ -47,9 +47,7 @@ class UnifiedTimerCard extends StatelessWidget {
     final phaseElapsedSeconds = currentHasStarted
         ? (elapsedTimeInPhase.inSeconds % 60).toString().padLeft(2, '0')
         : '00';
-    final effectiveMaxDuration = currentHasStarted
-        ? (deviceMaxDuration ?? maxDuration)
-        : maxDuration;
+    final effectiveMaxDuration = deviceMaxDuration ?? maxDuration;
     final l10n = AppLocalizations.of(context)!;
     final modeLabel = showHybridDisplay
         ? l10n.hybrid

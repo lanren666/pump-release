@@ -286,6 +286,142 @@ void main() {
     // -----------------------------------------------------------------------
     // shouldKickOnDbOffline — edge cases
     // -----------------------------------------------------------------------
+    // effectiveElapsedSeconds
+    // -----------------------------------------------------------------------
+    group('effectiveElapsedSeconds', () {
+      test('elapsedSeconds>0 → use elapsed (normal path)', () {
+        expect(
+          ControlDbRefreshKickLogic.effectiveElapsedSeconds(
+            elapsedSeconds: 600,
+            lastRunningTimePast: 599,
+          ),
+          600,
+        );
+      });
+
+      test('elapsedSeconds=0, lastRunning>0 → use lastRunning (nav-resume fallback)', () {
+        expect(
+          ControlDbRefreshKickLogic.effectiveElapsedSeconds(
+            elapsedSeconds: 0,
+            lastRunningTimePast: 899,
+          ),
+          899,
+        );
+      });
+
+      test('elapsedSeconds=0, lastRunning=0 → 0 (session never started)', () {
+        expect(
+          ControlDbRefreshKickLogic.effectiveElapsedSeconds(
+            elapsedSeconds: 0,
+            lastRunningTimePast: 0,
+          ),
+          0,
+        );
+      });
+
+      test('elapsedSeconds>0 ignores lastRunning even when lastRunning is higher', () {
+        expect(
+          ControlDbRefreshKickLogic.effectiveElapsedSeconds(
+            elapsedSeconds: 100,
+            lastRunningTimePast: 899,
+          ),
+          100,
+          reason: 'elapsed timer is authoritative once it advances',
+        );
+      });
+    });
+
+    // -----------------------------------------------------------------------
+    // effectiveElapsedSeconds → shouldKickOnDbOffline: nav-resume scenarios
+    // -----------------------------------------------------------------------
+    group('effectiveElapsedSeconds + shouldKickOnDbOffline: nav-resume', () {
+      // After navigation away/back, _leftElapsedTime=0 until first DP-105.
+      // The fallback to lastRunningTimePast prevents false kicks on natural end.
+      test('nav-resume: elapsed=0, lastRunning=899 (15-min natural end) → no kick', () {
+        final effective = ControlDbRefreshKickLogic.effectiveElapsedSeconds(
+          elapsedSeconds: 0,
+          lastRunningTimePast: 899,
+        );
+        expect(
+          ControlDbRefreshKickLogic.shouldKickOnDbOffline(
+            elapsedSeconds: effective,
+            deviceMaxDuration: 15,
+            uiMaxDuration: 15,
+          ),
+          isFalse,
+          reason: 'lastRunning=899 → natural end of 15-min session; no kick',
+        );
+      });
+
+      test('nav-resume: elapsed=0, lastRunning=300 (mid 20-min session) → kick', () {
+        final effective = ControlDbRefreshKickLogic.effectiveElapsedSeconds(
+          elapsedSeconds: 0,
+          lastRunningTimePast: 300,
+        );
+        expect(
+          ControlDbRefreshKickLogic.shouldKickOnDbOffline(
+            elapsedSeconds: effective,
+            deviceMaxDuration: 20,
+            uiMaxDuration: 20,
+          ),
+          isTrue,
+          reason: 'lastRunning=300 → mid-session; kick',
+        );
+      });
+
+      test('nav-resume: elapsed=0, lastRunning=0 (no history) → kick', () {
+        final effective = ControlDbRefreshKickLogic.effectiveElapsedSeconds(
+          elapsedSeconds: 0,
+          lastRunningTimePast: 0,
+        );
+        expect(
+          ControlDbRefreshKickLogic.shouldKickOnDbOffline(
+            elapsedSeconds: effective,
+            deviceMaxDuration: 20,
+            uiMaxDuration: 20,
+          ),
+          isTrue,
+          reason: 'no history → treat as crash; kick',
+        );
+      });
+
+      test('normal path: elapsed=1185 (near 20-min end) → no kick', () {
+        final effective = ControlDbRefreshKickLogic.effectiveElapsedSeconds(
+          elapsedSeconds: 1185,
+          lastRunningTimePast: 0,
+        );
+        expect(
+          ControlDbRefreshKickLogic.shouldKickOnDbOffline(
+            elapsedSeconds: effective,
+            deviceMaxDuration: 20,
+            uiMaxDuration: 20,
+          ),
+          isFalse,
+        );
+      });
+
+      test('nav-resume: lastRunning covers all maxTime natural end boundaries → no kick', () {
+        final lastRunningByMaxTime = {15: 840, 20: 1140, 25: 1440, 30: 1740};
+        for (final maxMin in _maxTimes) {
+          final lastRunning = lastRunningByMaxTime[maxMin]!;
+          final effective = ControlDbRefreshKickLogic.effectiveElapsedSeconds(
+            elapsedSeconds: 0,
+            lastRunningTimePast: lastRunning,
+          );
+          expect(
+            ControlDbRefreshKickLogic.shouldKickOnDbOffline(
+              elapsedSeconds: effective,
+              deviceMaxDuration: maxMin,
+              uiMaxDuration: maxMin,
+            ),
+            isFalse,
+            reason: 'maxTime=$maxMin min, lastRunning=$lastRunning s → natural end',
+          );
+        }
+      });
+    });
+
+    // -----------------------------------------------------------------------
     group('shouldKickOnDbOffline: edge cases', () {
       // maxTimeMinutes=0 cannot happen in normal firmware flow (decoder throws
       // FormatException for invalid values), but guard the path anyway.

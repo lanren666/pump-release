@@ -91,6 +91,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   bool _leftHasStarted = false;
   Duration _leftElapsedTime = Duration.zero;
   Duration _leftElapsedTimeInPhase = Duration.zero;
+  int _leftLastRunningTimePast = 0;
   int _leftCurrentPhase = 1;
   int _leftTotalPhase = 2;
   Duration _leftPhaseDuration = const Duration(minutes: 2);
@@ -109,6 +110,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   bool _rightHasStarted = false;
   Duration _rightElapsedTime = Duration.zero;
   Duration _rightElapsedTimeInPhase = Duration.zero;
+  int _rightLastRunningTimePast = 0;
   int _rightCurrentPhase = 1;
   int _rightTotalPhase = 2;
   Duration _rightPhaseDuration = const Duration(minutes: 2);
@@ -133,7 +135,11 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   static const String _keyRightExpressionSuction = 'suction_right_expression';
   static const String _descSuctionLevel = '吸力级别';
 
-  // 混合模式配置的 DB key，用于记忆上次设置（与 suctionlevel 一致：优先数据库，页面/DP 动态回写）
+  // 最大时长配置的 DB key，用于记忆上次设置
+  static const String _keyMaxDuration = 'session_max_duration';
+  static const String _descMaxDuration = '最大时长';
+
+  // 混合模式配置的 DB key，用于记忆上次设置（与 suctionlevel 一致：优先数据库、页面/DP 动态回写）
   static const String _keyLeftHybridPattern = 'hybrid_pattern_left';
   static const String _keyRightHybridPattern = 'hybrid_pattern_right';
   static const String _descHybridPattern = '混合模式';
@@ -178,6 +184,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadSuctionLevelSettings();
+    _loadMaxDurationSetting();
     _loadHybridPatternSettings();
     _loadCustomFlowDescription();
     _loadDevices();
@@ -321,6 +328,15 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       
       // 只更新数据，不改变isRunning状态
       setState(() {
+        // isRunning=1 报文即使在容错窗口内也必须更新 lastRunning，
+        // 否则容错窗口结束后 effectiveTimePast 只能看到 0。
+        if (isRunning == 1 && timePast > 0) {
+          if (isLeftDevice) {
+            _leftLastRunningTimePast = timePast;
+          } else {
+            _rightLastRunningTimePast = timePast;
+          }
+        }
         if (isLeftDevice) {
           // 更新数据但保持当前isRunning状态
           _leftElapsedTime = Duration(seconds: timePast);
@@ -386,7 +402,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         // debugPrint('⚠️ 设备已停止且 app 未在运行中，跳过配置下发: $deviceSide设备');
         final initialState = await _getInitialDeviceState(isLeftDevice);
         setState(() {
-          _deviceMaxDuration = null;
+          _deviceMaxDuration = maxTime;
 
           if (isLeftDevice) {
             _leftIsRunning = false;
@@ -444,9 +460,18 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
           // Only kick when the stop is unexpected (mid-session crash / BLE drop).
           // When both devices finish their configured session time they stop
           // seconds apart; the first to stop must be cleaned up, not restarted.
+          //
+          // The firmware resets timePast to 0 in the final isRunning=0 packet after
+          // a natural end, so we use the last observed running timePast as a
+          // fallback to avoid misclassifying a natural end as an unexpected stop.
+          final lastRunning = isLeftDevice ? _leftLastRunningTimePast : _rightLastRunningTimePast;
+          final effectiveTimePast = ControlBothSessionEndLogic.effectiveTimePast(
+            rawTimePast: timePast,
+            lastRunningTimePast: lastRunning,
+          );
           if (ControlBothSessionEndLogic.shouldKickOnBothStop(
             otherSideRunning: otherSideRunning,
-            timePast: timePast,
+            timePast: effectiveTimePast,
             maxTimeMinutes: maxTime,
           )) {
             await _kickBothSideSessionIfNeeded(
@@ -569,7 +594,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
           }
         }
         setState(() {
-          _deviceMaxDuration = null;
+          _deviceMaxDuration = maxTime;
 
           if (isLeftDevice) {
             _leftIsRunning = false;
@@ -628,6 +653,14 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       } else if (!isLeftDevice && !_rightHasStarted) {
         if (!BatteryAlertLogic.isLowBatteryLevel(_rightDevice?.battery ?? 0)) {
           _clearSessionLowBatteryPromptFlag(_rightDevice?.bluetoothId);
+        }
+      }
+
+      if (timePast > 0) {
+        if (isLeftDevice) {
+          _leftLastRunningTimePast = timePast;
+        } else {
+          _rightLastRunningTimePast = timePast;
         }
       }
 
@@ -767,7 +800,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     } else if (isRunning == 2) {
       // debugPrint('⚠️ 设备已暂停: $deviceSide设备，保持当前状态');
       setState(() {
-        _deviceMaxDuration = maxTime;
+        _deviceMaxDuration = null;
 
         if (isLeftDevice) {
           _leftIsRunning = false;
@@ -1261,11 +1294,15 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             newLeftDevice.isRunning;
         if ((wasLeftConnected && !isLeftConnected && _leftHasStarted) ||
             (_leftDevice != null && newLeftDevice == null && _leftHasStarted)) {
+          final leftEffectiveElapsed = ControlDbRefreshKickLogic.effectiveElapsedSeconds(
+            elapsedSeconds: _leftElapsedTime.inSeconds,
+            lastRunningTimePast: _leftLastRunningTimePast,
+          );
           if (_selectedPump == PumpSelection.both &&
               _rightHasStarted &&
               _rightIsRunning &&
               ControlDbRefreshKickLogic.shouldKickOnDbOffline(
-                elapsedSeconds: _leftElapsedTime.inSeconds,
+                elapsedSeconds: leftEffectiveElapsed,
                 deviceMaxDuration: _deviceMaxDuration,
                 uiMaxDuration: _maxDuration,
               )) {
@@ -1308,11 +1345,15 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             (_rightDevice != null &&
                 newRightDevice == null &&
                 _rightHasStarted)) {
+          final rightEffectiveElapsed = ControlDbRefreshKickLogic.effectiveElapsedSeconds(
+            elapsedSeconds: _rightElapsedTime.inSeconds,
+            lastRunningTimePast: _rightLastRunningTimePast,
+          );
           if (_selectedPump == PumpSelection.both &&
               _leftHasStarted &&
               _leftIsRunning &&
               ControlDbRefreshKickLogic.shouldKickOnDbOffline(
-                elapsedSeconds: _rightElapsedTime.inSeconds,
+                elapsedSeconds: rightEffectiveElapsed,
                 deviceMaxDuration: _deviceMaxDuration,
                 uiMaxDuration: _maxDuration,
               )) {
@@ -1523,6 +1564,32 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     } else {
       await _dbService.insertSetting(
         Setting(key: key, desc: _descSuctionLevel, value: valueStr),
+      );
+    }
+  }
+
+  Future<void> _loadMaxDurationSetting() async {
+    final s = await _dbService.getSettingByKey(_keyMaxDuration);
+    if (s == null) return;
+    final value = int.tryParse(s.value);
+    if (value == null || ![15, 20, 25, 30].contains(value)) return;
+    if (!mounted) return;
+    setState(() {
+      _maxDuration = value;
+      _pumpMaxDurations[PumpSelection.left] = value;
+      _pumpMaxDurations[PumpSelection.right] = value;
+      _pumpMaxDurations[PumpSelection.both] = value;
+    });
+  }
+
+  Future<void> _persistMaxDuration(int value) async {
+    final valueStr = value.toString();
+    final existing = await _dbService.getSettingByKey(_keyMaxDuration);
+    if (existing != null) {
+      await _dbService.updateSettingByKey(_keyMaxDuration, valueStr);
+    } else {
+      await _dbService.insertSetting(
+        Setting(key: _keyMaxDuration, desc: _descMaxDuration, value: valueStr),
       );
     }
   }
@@ -2168,19 +2235,23 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         _leftElapsedTime = Duration.zero;
         _leftElapsedTimeInPhase = Duration.zero;
         _leftCurrentPhase = 1;
+        _leftLastRunningTimePast = 0;
         break;
       case PumpSelection.right:
         _rightElapsedTime = Duration.zero;
         _rightElapsedTimeInPhase = Duration.zero;
         _rightCurrentPhase = 1;
+        _rightLastRunningTimePast = 0;
         break;
       case PumpSelection.both:
         _leftElapsedTime = Duration.zero;
         _leftElapsedTimeInPhase = Duration.zero;
         _leftCurrentPhase = 1;
+        _leftLastRunningTimePast = 0;
         _rightElapsedTime = Duration.zero;
         _rightElapsedTimeInPhase = Duration.zero;
         _rightCurrentPhase = 1;
+        _rightLastRunningTimePast = 0;
         break;
     }
   }
@@ -3031,6 +3102,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                             _pumpMaxDurations[PumpSelection.right] = newValue;
                             _pumpMaxDurations[PumpSelection.both] = newValue;
                           });
+                          _persistMaxDuration(newValue);
                         }
                       },
                     ),
@@ -3997,9 +4069,13 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       if (isLeft) {
         _leftHasStarted = true;
         _leftIsRunning = true;
+        // 新会话开始，清除旧会话的 lastRunning，避免因固件 timePast 重置
+        // 为 0 时误把新会话的崩溃判断为自然结束。
+        _leftLastRunningTimePast = 0;
       } else {
         _rightHasStarted = true;
         _rightIsRunning = true;
+        _rightLastRunningTimePast = 0;
       }
     });
   }

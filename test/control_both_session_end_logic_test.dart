@@ -316,5 +316,203 @@ void main() {
         );
       });
     });
+
+    // -----------------------------------------------------------------------
+    // effectiveTimePast
+    // -----------------------------------------------------------------------
+    group('effectiveTimePast', () {
+      // Core scenario: firmware resets timePast to 0 in the final
+      // isRunning=0 packet after a natural session end.
+      test('rawTimePast=0, lastRunning>0 → uses lastRunning (firmware reset)', () {
+        expect(
+          ControlBothSessionEndLogic.effectiveTimePast(
+            rawTimePast: 0,
+            lastRunningTimePast: 899,
+          ),
+          899,
+        );
+      });
+
+      test('rawTimePast=0, lastRunning=0 → 0 (session never saw running packet)', () {
+        expect(
+          ControlBothSessionEndLogic.effectiveTimePast(
+            rawTimePast: 0,
+            lastRunningTimePast: 0,
+          ),
+          0,
+        );
+      });
+
+      test('rawTimePast>0, lastRunning>0 → uses rawTimePast (normal packet)', () {
+        expect(
+          ControlBothSessionEndLogic.effectiveTimePast(
+            rawTimePast: 500,
+            lastRunningTimePast: 499,
+          ),
+          500,
+        );
+      });
+
+      test('rawTimePast>0, lastRunning=0 → uses rawTimePast', () {
+        expect(
+          ControlBothSessionEndLogic.effectiveTimePast(
+            rawTimePast: 300,
+            lastRunningTimePast: 0,
+          ),
+          300,
+        );
+      });
+    });
+
+    // -----------------------------------------------------------------------
+    // effectiveTimePast + shouldKickOnBothStop: end-to-end fix scenarios
+    // -----------------------------------------------------------------------
+    group('effectiveTimePast → shouldKickOnBothStop end-to-end', () {
+      // The bug: firmware sends timePast=0 in final isRunning=0 packet.
+      // Without the fix, shouldKickOnBothStop(timePast=0) wrongly kicks.
+      // With the fix, effectiveTimePast restores the last known running value.
+      test('firmware resets timePast=0 at natural end of 15-min session → no kick', () {
+        // Last DP-105 with isRunning=1 reported timePast=899 (within 60 s of 900).
+        final effective = ControlBothSessionEndLogic.effectiveTimePast(
+          rawTimePast: 0,
+          lastRunningTimePast: 899,
+        );
+        expect(
+          ControlBothSessionEndLogic.shouldKickOnBothStop(
+            otherSideRunning: true,
+            timePast: effective,
+            maxTimeMinutes: 15,
+          ),
+          isFalse,
+          reason: 'effectiveTimePast=899 → natural end of 15-min session',
+        );
+      });
+
+      test('firmware resets timePast=0 at natural end of 20-min session → no kick', () {
+        final effective = ControlBothSessionEndLogic.effectiveTimePast(
+          rawTimePast: 0,
+          lastRunningTimePast: 1185, // 15 s before 1200
+        );
+        expect(
+          ControlBothSessionEndLogic.shouldKickOnBothStop(
+            otherSideRunning: true,
+            timePast: effective,
+            maxTimeMinutes: 20,
+          ),
+          isFalse,
+        );
+      });
+
+      test('firmware resets timePast=0 at natural end for all maxTime values → no kick', () {
+        final lastRunningByMaxTime = {15: 899, 20: 1199, 25: 1499, 30: 1799};
+        for (final maxMin in _maxTimes) {
+          final lastRunning = lastRunningByMaxTime[maxMin]!;
+          final effective = ControlBothSessionEndLogic.effectiveTimePast(
+            rawTimePast: 0,
+            lastRunningTimePast: lastRunning,
+          );
+          expect(
+            ControlBothSessionEndLogic.shouldKickOnBothStop(
+              otherSideRunning: true,
+              timePast: effective,
+              maxTimeMinutes: maxMin,
+            ),
+            isFalse,
+            reason: 'maxTime=$maxMin min, lastRunning=$lastRunning → natural end',
+          );
+        }
+      });
+
+      test('genuine mid-session crash: rawTimePast=0, no lastRunning → kick', () {
+        // Device crashed at session start; no running packet ever received.
+        final effective = ControlBothSessionEndLogic.effectiveTimePast(
+          rawTimePast: 0,
+          lastRunningTimePast: 0,
+        );
+        expect(
+          ControlBothSessionEndLogic.shouldKickOnBothStop(
+            otherSideRunning: true,
+            timePast: effective,
+            maxTimeMinutes: 20,
+          ),
+          isTrue,
+          reason: 'effectiveTimePast=0, no history → kick',
+        );
+      });
+
+      test('genuine mid-session crash at 5 min: lastRunning=300 is mid-session → kick', () {
+        final effective = ControlBothSessionEndLogic.effectiveTimePast(
+          rawTimePast: 0,
+          lastRunningTimePast: 300,
+        );
+        expect(
+          ControlBothSessionEndLogic.shouldKickOnBothStop(
+            otherSideRunning: true,
+            timePast: effective,
+            maxTimeMinutes: 20,
+          ),
+          isTrue,
+          reason: 'effectiveTimePast=300 → mid-session, kick',
+        );
+      });
+
+      // After BOTH_KICK, _lastRunningTimePast is reset to 0 (Bug #2 fix).
+      // If the restarted device crashes before sending isRunning=1, lastRunning=0.
+      test('post-BOTH_KICK crash with no new isRunning=1 packets: lastRunning=0 → kick', () {
+        // The kicked device never sent a running packet; lastRunning was reset.
+        final effective = ControlBothSessionEndLogic.effectiveTimePast(
+          rawTimePast: 0,
+          lastRunningTimePast: 0, // reset by _kickBothSideSessionIfNeeded
+        );
+        expect(
+          ControlBothSessionEndLogic.shouldKickOnBothStop(
+            otherSideRunning: true,
+            timePast: effective,
+            maxTimeMinutes: 20,
+          ),
+          isTrue,
+          reason: 'lastRunning reset by kick → crash detected correctly',
+        );
+      });
+
+      // Both devices end nearly simultaneously (< 60 s apart).
+      // Neither should restart the other.
+      test('simultaneous natural end: both stopped within tolerance → no kick', () {
+        for (final maxMin in _maxTimes) {
+          final maxSec = maxMin * 60;
+          // First device stops with timePast near maxTime; other side is still
+          // running but will stop within seconds. Neither should be kicked.
+          final effectiveFirst = ControlBothSessionEndLogic.effectiveTimePast(
+            rawTimePast: 0,
+            lastRunningTimePast: maxSec - 5, // 5 s before max
+          );
+          expect(
+            ControlBothSessionEndLogic.shouldKickOnBothStop(
+              otherSideRunning: true,
+              timePast: effectiveFirst,
+              maxTimeMinutes: maxMin,
+            ),
+            isFalse,
+            reason: 'maxTime=$maxMin min: first side natural end → no kick',
+          );
+        }
+      });
+
+      // Mid-session crash (not natural end) regardless of lastRunning value.
+      test('rawTimePast=600 (normal packet, mid 20-min session) → kick', () {
+        final effective = ControlBothSessionEndLogic.effectiveTimePast(
+          rawTimePast: 600,
+          lastRunningTimePast: 599,
+        );
+        expect(
+          ControlBothSessionEndLogic.shouldKickOnBothStop(
+            otherSideRunning: true,
+            timePast: effective,
+            maxTimeMinutes: 20,
+          ),
+          isTrue,
+        );
+      });
+    });
   });
 }

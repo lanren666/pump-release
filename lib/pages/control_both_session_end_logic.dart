@@ -33,6 +33,23 @@ class ControlBothSessionEndLogic {
     return timePast >= maxTimeSeconds - toleranceSeconds;
   }
 
+  /// Resolves the timePast value used for kick-or-not decisions when the
+  /// firmware resets timePast to 0 in the final isRunning=0 packet after a
+  /// natural session end.
+  ///
+  /// When [rawTimePast] is 0 but [lastRunningTimePast] is non-zero, the device
+  /// most likely just finished naturally and the firmware reset its counter; use
+  /// the last observed running value so [completedNaturally] can make the
+  /// correct decision.
+  static int effectiveTimePast({
+    required int rawTimePast,
+    required int lastRunningTimePast,
+  }) {
+    return (rawTimePast == 0 && lastRunningTimePast > 0)
+        ? lastRunningTimePast
+        : rawTimePast;
+  }
+
   /// Returns true if the stopped device should be kicked (restarted):
   /// the other side is still running AND this stop appears to be mid-session.
   ///
