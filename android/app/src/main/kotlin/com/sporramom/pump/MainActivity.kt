@@ -1127,6 +1127,11 @@ class MainActivity : FlutterActivity(), LocationListener {
 //            bleConnectBuilder.setLevel(BleConnectBuilder.Level.FORCE)
             builderList.add(bleConnectBuilder)
 
+            // 在发起连接前注册监听，确保固件连接后立即推送的 DP（如 104 电量）不会丢失
+            if (devId.isNotEmpty()) {
+                registerDeviceListener(devId)
+            }
+
             ThingHomeSdk.getBleManager().connectBleDevice(builderList)
 
             // 由于连接是异步的，我们需要通过监听连接状态来判断是否成功
@@ -1137,7 +1142,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                 if (isOnline) {
                     android.util.Log.d("MainActivity", "✅ 设备连接成功: devId=$devId")
                     updateConnectionState(deviceId, "connected")
-                    // 连接成功后再注册监听器
+                    // 二次注册确保监听器与最新 IThingDevice 实例绑定（registerDeviceListener 内部会先 unRegister 旧实例）
                     registerDeviceListener(devId)
                     
                     // 返回包含devId的字典
@@ -1301,6 +1306,12 @@ class MainActivity : FlutterActivity(), LocationListener {
                     bleConnectBuilder.setDevId(devId)
                     bleConnectBuilder.setDirectConnect(true)
                     builderList.add(bleConnectBuilder)
+                    // 在发起连接前注册监听，确保固件连接后立即推送的 DP 不会丢失
+                    // 仅对已解析出的 devId 注册（排除解析失败时回退使用 bluetoothId 的情况）
+                    val resolvedDevId = resolvedMap[flutterId]
+                    if (!resolvedDevId.isNullOrEmpty()) {
+                        registerDeviceListener(resolvedDevId)
+                    }
                 }
 
                 ThingHomeSdk.getBleManager().connectBleDevice(builderList)

@@ -228,16 +228,18 @@ class DpChangeHandle {
       case DpConstants.batteryLevel:
         final device = await _dbService.getDeviceByDevId(deviceId);
         if (device != null) {
-          final intValue = int.parse(dpValue.toString());
-          await _dbService.updateDevice(device.copyWith(battery: intValue));
-          _dpParamController.add(
-            DpParamUpdate(
-              deviceId: deviceId,
-              dpId: dpId,
-              value: intValue,
-              position: device.position,
-            ),
-          );
+          final intValue = int.tryParse(dpValue.toString());
+          if (intValue != null) {
+            await _dbService.updateDevice(device.copyWith(battery: intValue));
+            _dpParamController.add(
+              DpParamUpdate(
+                deviceId: deviceId,
+                dpId: dpId,
+                value: intValue,
+                position: device.position,
+              ),
+            );
+          }
         }
         break;
       default:
