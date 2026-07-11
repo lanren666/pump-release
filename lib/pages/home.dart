@@ -48,6 +48,7 @@ class _HomePageState extends State<HomePage>
   final DatabaseService _dbService = DatabaseService();
   final List<BluetoothDevice> _scannedDevices = [];
   ConnectedDevice? _devicePendingConnectLowBatteryCheck;
+  final Set<String> _disconnectingIds = {};
 
   @override
   void initState() {
@@ -1514,6 +1515,14 @@ class _HomePageState extends State<HomePage>
         'code': e.code,
         'message': e.message,
       });
+      if (e.code == 'ACTIVATION_FAILED' && AppConfig.tuyaEnabled) {
+        // Reset BLE state: repeated activeBLE failures leave SDK in a stuck state.
+        // Clearing it now means the next attempt (after user re-scans) starts clean,
+        // matching what an app restart would do.
+        try {
+          await connectionChannel.invokeMethod('resetBleActivationState');
+        } catch (_) {}
+      }
       return false;
     } catch (e) {
       debugPrint('❌ 连接设备出错: $e');
@@ -1523,39 +1532,45 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _disconnectDevice(String bluetoothId) async {
-    AppLogger.user('disconnectDevice', {'bluetoothId': bluetoothId});
-    final device = await _dbService.getDeviceByBluetoothId(bluetoothId);
-    if (device != null) {
-      if (device.devId != null &&
-          device.devId!.isNotEmpty &&
-          AppConfig.tuyaEnabled) {
-        try {
-          await connectionChannel.invokeMethod('removeDevice', {
-            'devId': device.devId,
-          });
-        } catch (e) {
-          debugPrint('❌ 移除设备失败: $e');
+    if (_disconnectingIds.contains(bluetoothId)) return;
+    _disconnectingIds.add(bluetoothId);
+    try {
+      AppLogger.user('disconnectDevice', {'bluetoothId': bluetoothId});
+      final device = await _dbService.getDeviceByBluetoothId(bluetoothId);
+      if (device != null) {
+        if (device.devId != null &&
+            device.devId!.isNotEmpty &&
+            AppConfig.tuyaEnabled) {
+          try {
+            await connectionChannel.invokeMethod('removeDevice', {
+              'devId': device.devId,
+            });
+          } catch (e) {
+            debugPrint('❌ 移除设备失败: $e');
+          }
         }
+
+        await _dbService.updateDevice(
+          device.copyWith(isRemembered: false, isRunning: false),
+        );
       }
 
-      await _dbService.updateDevice(
-        device.copyWith(isRemembered: false, isRunning: false),
-      );
+      setState(() {
+        _connectedDevices.removeWhere(
+          (device) => device.bluetoothId == bluetoothId,
+        );
+        _scannedDevices.removeWhere(
+          (device) => device.bluetoothId == bluetoothId,
+        );
+      });
+
+      // 更新设备列表，确保UI反映最新的状态
+      await _updateDeviceList();
+
+      _showDeviceRemovedMessage();
+    } finally {
+      _disconnectingIds.remove(bluetoothId);
     }
-
-    setState(() {
-      _connectedDevices.removeWhere(
-        (device) => device.bluetoothId == bluetoothId,
-      );
-      _scannedDevices.removeWhere(
-        (device) => device.bluetoothId == bluetoothId,
-      );
-    });
-
-    // 更新设备列表，确保UI反映最新的状态
-    await _updateDeviceList();
-
-    _showDeviceRemovedMessage();
   }
 
   void _showStatusMessageWithAnimation(

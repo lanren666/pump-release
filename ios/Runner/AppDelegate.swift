@@ -584,6 +584,8 @@ extension Date {
                 self.handleRemoveDevice(call: call, result: result)
             case "registerDeviceListener":
                 self.handleRegisterDeviceListener(call: call, result: result)
+            case "resetBleActivationState":
+                self.handleResetBleActivationState(result: result)
             default:
                 result(FlutterMethodNotImplemented)
             }
@@ -944,6 +946,10 @@ extension Date {
             ]
 
             print("❌ 设备激活失败: \(errorMessage), details=\(errorDetails)")
+            // Clear scan cache (true) so stale device advertisement data is discarded.
+            // Repeated failures leave the SDK BLE manager in a stuck state; this resets
+            // it so the next startListening/scan begins clean with fresh device data.
+            ThingSmartBLEManager.sharedInstance().stopListening(true)
             self?.updateConnectionState(deviceId: deviceId, state: "disconnected", error: errorMessage)
             result(FlutterError(
                 code: "ACTIVATION_FAILED",
@@ -1159,6 +1165,12 @@ extension Date {
                 "errorMsg": errorMsg
             ]))
         })
+    }
+
+    private func handleResetBleActivationState(result: @escaping FlutterResult) {
+        print("🔄 resetBleActivationState: clearing BLE scan cache to reset stuck activation state")
+        ThingSmartBLEManager.sharedInstance().stopListening(true)
+        result(nil)
     }
 
     private func handleRegisterDeviceListener(call: FlutterMethodCall, result: @escaping FlutterResult) {

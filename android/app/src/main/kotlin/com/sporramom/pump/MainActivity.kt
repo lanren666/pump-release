@@ -337,6 +337,10 @@ class MainActivity : FlutterActivity(), LocationListener {
                     handleRegisterDeviceListener(call, result)
                 }
 
+                "resetBleActivationState" -> {
+                    handleResetBleActivationState(result)
+                }
+
                 else -> {
                     result.notImplemented()
                 }
@@ -914,6 +918,15 @@ class MainActivity : FlutterActivity(), LocationListener {
                 override fun onFailure(code: Int, msg: String, handle: Any?) {
                     val errorMessage = "Device activation failed: code=$code msg=$msg handle=$handle"
                     android.util.Log.e("MainActivity", "❌ 设备激活失败: $errorMessage")
+                    // Reset BLE scan state so the next activator attempt starts clean.
+                    // Repeated failures leave the activator in a stuck state; stopping the
+                    // scan and clearing cached device beans mirrors what an app restart does.
+                    try {
+                        ThingHomeSdk.getBleOperator().stopLeScan()
+                    } catch (e: Exception) {
+                        android.util.Log.w("MainActivity", "stopLeScan after failure: ${e.message}")
+                    }
+                    scannedDevices.clear()
                     updateConnectionState(deviceId, "disconnected", errorMessage)
                     result.error(
                         "ACTIVATION_FAILED",
@@ -1372,6 +1385,17 @@ class MainActivity : FlutterActivity(), LocationListener {
                 result.success(null)
             }
         })
+    }
+
+    private fun handleResetBleActivationState(result: MethodChannel.Result) {
+        android.util.Log.d("MainActivity", "🔄 resetBleActivationState: clearing BLE scan cache to reset stuck activation state")
+        try {
+            ThingHomeSdk.getBleOperator().stopLeScan()
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "stopLeScan in reset: ${e.message}")
+        }
+        scannedDevices.clear()
+        result.success(null)
     }
 
     private fun handleRegisterDeviceListener(call: MethodCall, result: MethodChannel.Result) {
