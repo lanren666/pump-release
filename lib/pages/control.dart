@@ -800,7 +800,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     } else if (isRunning == 2) {
       // debugPrint('⚠️ 设备已暂停: $deviceSide设备，保持当前状态');
       setState(() {
-        _deviceMaxDuration = null;
+        _deviceMaxDuration = maxTime;
 
         if (isLeftDevice) {
           _leftIsRunning = false;
@@ -4163,6 +4163,18 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                                 modeDurations: modeDurations,
                                 totalPhase: totalPhase,
                               );
+                              // Optimistically mark both sides as running now that
+                              // startN has been dispatched.  _bothStartInProgress
+                              // was cleared in the finally block, so without this
+                              // _getCurrentIsRunning() (which requires both &&) would
+                              // return false until the first DP105 isRunning=1 arrives
+                              // from both devices — causing the button to flash "Start".
+                              if (mounted) {
+                                setState(() {
+                                  _leftIsRunning = true;
+                                  _rightIsRunning = true;
+                                });
+                              }
                             } else {
                               _bothStartInProgress = false;
                             }
