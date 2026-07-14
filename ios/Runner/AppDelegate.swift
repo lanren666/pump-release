@@ -843,7 +843,12 @@ extension Date {
             homeId = nil
         }
 
-        print("🔗 开始连接设备: \(deviceId), uuid: \(uuid), productKey: \(productKey), 超时: \(timeout)秒")
+        // Dart DB-stored devId — non-empty means the device is already paired.
+        // Scan results never carry the real Tuya devId (iOS sets devId = uuid, Android sets ""),
+        // so Dart does the DB lookup and passes it here to avoid an unreliable cloud query.
+        let dartDevId = (args["devId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+
+        print("🔗 开始连接设备: \(deviceId), uuid: \(uuid), productKey: \(productKey), 超时: \(timeout)秒, dartDevId: \(dartDevId ?? "nil")")
 
         // 使用BLE Manager连接设备
         guard let bleManager = bleManager else {
@@ -856,25 +861,32 @@ extension Date {
         if let deviceInfo = scannedDevices[uuid] {
             if !deviceInfo.isActive {
                 // 设备广播 isActive=false（如电池重插后重新进入配对模式），但可能仍绑定在当前 home。
-                // 先查 home 列表：找到 devId 说明已配对，直接连接；找不到才走激活流程。
-                getDeviceByUuid(uuid: uuid) { [weak self] existingDevice in
-                    guard let self = self else { return }
-                    if let devId = existingDevice?.devId, !devId.isEmpty {
-                        print("🔄 设备已在 home，跳过激活直接连接 (isActive=false): \(uuid), devId=\(devId)")
-                        self.connectDeviceDirectly(deviceId: deviceId, uuid: uuid, productKey: productKey, devId: devId, result: result)
-                    } else {
-                        print("📱 设备未配网，需要先激活: \(uuid)")
-                        self.activeDevice(deviceInfo: deviceInfo, homeId: homeId, deviceId: deviceId, uuid: uuid, productKey: productKey, result: result)
+                if let knownDevId = dartDevId {
+                    // Dart passed the DB-stored devId — device is already registered.
+                    // Skip the cloud getDeviceByUuid query; connect directly.
+                    print("🔄 使用 Dart 传入的 devId 直接连接 (isActive=false): \(uuid), devId=\(knownDevId)")
+                    connectDeviceDirectly(deviceId: deviceId, uuid: uuid, productKey: productKey, devId: knownDevId, result: result)
+                } else {
+                    // No known devId — fall back to home list lookup before deciding to activate.
+                    getDeviceByUuid(uuid: uuid) { [weak self] existingDevice in
+                        guard let self = self else { return }
+                        if let devId = existingDevice?.devId, !devId.isEmpty {
+                            print("🔄 设备已在 home，跳过激活直接连接 (isActive=false): \(uuid), devId=\(devId)")
+                            self.connectDeviceDirectly(deviceId: deviceId, uuid: uuid, productKey: productKey, devId: devId, result: result)
+                        } else {
+                            print("📱 设备未配网，需要先激活: \(uuid)")
+                            self.activeDevice(deviceInfo: deviceInfo, homeId: homeId, deviceId: deviceId, uuid: uuid, productKey: productKey, result: result)
+                        }
                     }
                 }
             } else {
                 print("✅ 设备已配网，直接连接: \(uuid)")
-                connectDeviceDirectly(deviceId: deviceId, uuid: uuid, productKey: productKey, devId: nil, result: result)
+                connectDeviceDirectly(deviceId: deviceId, uuid: uuid, productKey: productKey, devId: dartDevId, result: result)
             }
         } else {
             // 设备信息不在扫描结果中，可能是已配网的设备，直接尝试连接
             print("⚠️ 设备信息不在扫描结果中，尝试直接连接: \(uuid)")
-            connectDeviceDirectly(deviceId: deviceId, uuid: uuid, productKey: productKey, devId: nil, result: result)
+            connectDeviceDirectly(deviceId: deviceId, uuid: uuid, productKey: productKey, devId: dartDevId, result: result)
         }
     }
 

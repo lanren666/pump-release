@@ -714,6 +714,9 @@ class MainActivity : FlutterActivity(), LocationListener {
         val uuid = args?.get("uuid") as? String
         val productKey = args?.get("productKey") as? String
         val homeId = (args?.get("homeId") as? Number)?.toLong()
+        // Dart passes the DB-stored devId when the device has been paired before.
+        // Non-empty means "already paired" — skip isActive reflection and getHomeDetail entirely.
+        val dartDevId = (args?.get("devId") as? String)?.takeIf { it.isNotEmpty() }
 
         if (deviceId == null || uuid == null || productKey == null) {
             result.error("INVALID_ARGUMENT", "deviceId, uuid, and productKey are required", null)
@@ -722,24 +725,29 @@ class MainActivity : FlutterActivity(), LocationListener {
 
         android.util.Log.d(
             "MainActivity",
-            "🔗 开始连接设备: $deviceId, uuid: $uuid, productKey: $productKey"
+            "🔗 开始连接设备: $deviceId, uuid: $uuid, productKey: $productKey, dartDevId: $dartDevId"
         )
 
-        // 检查设备是否需要配网
+        // If Dart already knows the devId the device is paired — connect directly.
+        // This bypasses the unreliable isActive reflection and network-dependent getHomeDetail.
+        if (dartDevId != null) {
+            android.util.Log.d("MainActivity", "✅ 使用 Dart 传入的 devId 直接连接: $dartDevId")
+            connectDeviceDirectly(dartDevId, deviceId, uuid, productKey, result)
+            return
+        }
+
+        // Device not yet paired: decide activation vs direct-connect via scan-cache isActive.
         val deviceInfo = scannedDevices[uuid]
-        // 尝试检查设备是否已配网（通过反射或默认假设未配网）
         val isActive = try {
             val isActiveField = deviceInfo?.javaClass?.getDeclaredField("isActive")
             isActiveField?.isAccessible = true
             isActiveField?.getBoolean(deviceInfo) ?: false
         } catch (e: Exception) {
-            // 如果无法获取 isActive，默认假设需要配网
             false
         }
 
         if (deviceInfo != null && !isActive) {
             android.util.Log.d("MainActivity", "📱 设备未配网，需要先激活: $uuid")
-            // 需要先配网
             activeDevice(deviceInfo, homeId, deviceId, uuid, productKey, result)
         } else {
             android.util.Log.d("MainActivity", "✅ 设备已配网，直接连接: $uuid")

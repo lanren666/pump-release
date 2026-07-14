@@ -1369,11 +1369,19 @@ class _HomePageState extends State<HomePage>
         final homeIdSetting = await dbService.getSettingByKey('tuya_home_id');
         final homeId = homeIdSetting?.value;
 
+        // Look up the Tuya devId from DB — scan results never include it reliably
+        // (Android always sends "", iOS sends the BLE UUID instead of the devId).
+        // Passing the real devId lets native skip re-activation for devices that
+        // re-enter advertising mode (isActive=false) after a disconnect.
+        final dbDeviceForConnect = await _dbService.getDeviceByBluetoothId(device.bluetoothId);
+        final existingDevId = dbDeviceForConnect?.devId ?? '';
+
         final Map<String, dynamic> connectParams = {
           'deviceId': device.bluetoothId,
           'uuid': device.uuid,
           'productKey': device.productKey,
           'timeout': 30,
+          if (existingDevId.isNotEmpty) 'devId': existingDevId,
         };
 
         final effectiveHomeId = (homeId != null && homeId.isNotEmpty)
