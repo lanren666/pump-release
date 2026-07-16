@@ -14,6 +14,7 @@ import '../models/search_state.dart';
 import '../services/database_service.dart';
 import '../services/tuya/ble_dp_service.dart';
 import '../services/tuya/dp_constants.dart';
+import '../services/tuya/first_dp_or_timeout.dart';
 import '../services/tuya/device_listener_service.dart';
 import '../services/tuya/device_reconnect_policy.dart';
 import '../services/tuya/running_status_log.dart';
@@ -470,6 +471,26 @@ class _HomePageState extends State<HomePage>
         await Future.delayed(const Duration(seconds: 1));
       }
     }
+  }
+
+  // 等设备上报首个 DP（BLE channel 就绪信号）后再发 deviceSymbol。
+  // 若 4s 内无 DP 上报则 fallback 直接发。devId 为 null 时（极罕见）立即发。
+  void _publishDeviceSymbolAfterFirstDp(
+    String bluetoothId,
+    String position,
+    String? devId,
+  ) {
+    if (devId == null || devId.isEmpty) {
+      _publishDeviceSymbolThrice(bluetoothId, position);
+      return;
+    }
+
+    waitFirstDpOrTimeout(
+      deviceIdStream: BleDpService.dpReportStream.map((r) => r.deviceId),
+      targetDevId: devId,
+      timeout: const Duration(seconds: 4),
+      onReady: () => _publishDeviceSymbolThrice(bluetoothId, position),
+    );
   }
 
   Future<void> _handleNetworkStatusChanged(String devId, bool online) async {
@@ -1484,7 +1505,7 @@ class _HomePageState extends State<HomePage>
         }
 
         if (AppConfig.tuyaEnabled) {
-          _publishDeviceSymbolThrice(device.bluetoothId, position);
+          _publishDeviceSymbolAfterFirstDp(device.bluetoothId, position, newDevice.devId);
         }
 
         if (mounted) {

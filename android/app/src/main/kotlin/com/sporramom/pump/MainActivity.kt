@@ -1585,7 +1585,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                             ) || errorMsg.contains(
                                 "readonly",
                                 ignoreCase = true
-                            ) || errorMsg.contains("ro", ignoreCase = true) -> {
+                            ) -> {
                                 "不能下发只读类型 DP 数据，参考 SchemaBean getMode，\"ro\" 是只读类型"
                             }
 
@@ -1657,7 +1657,7 @@ class MainActivity : FlutterActivity(), LocationListener {
 
         // 使用 getDp 方法获取单个 DP 的值
         device.getDp(dpId, object : IResultCallback {
-            override fun onError(errorCode: String, errorMsg: String) {
+            override fun onError(errorCode: String?, errorMsg: String?) {
                 android.util.Log.e(
                     "MainActivity",
                     "❌ 获取 DP[$dpId] 失败: code=$errorCode, error=$errorMsg"

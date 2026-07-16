@@ -84,10 +84,12 @@ class BleDpService {
       debugPrint(
         '⚠️ 下发DP失败 $deviceId, dps: ${dps.map((dp) => dp.toJson()).toList()}, error: $errorMessage',
       );
+        final rawSdkError = details?['error'] as String?;
         AppLogger.e('hw', 'publishDps PlatformException', {
           'bluetoothId': deviceId,
           'code': errorCode,
           'message': errorMessage,
+          if (rawSdkError != null && rawSdkError != errorMessage) 'sdkRaw': rawSdkError,
         });
         return false;
       }
