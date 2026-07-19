@@ -473,18 +473,21 @@ class _HomePageState extends State<HomePage>
     }
   }
 
-  // 等设备上报首个 DP（BLE channel 就绪信号）后再发 deviceSymbol。
-  // 若 4s 内无 DP 上报则 fallback 直接发。devId 为 null 时（极罕见）立即发。
+  // 发送 deviceSymbol (DP 111)。
+  // 连上后立即发一次：native 有 2s 固定延迟，设备上线后 Dart 只剩约 700ms 窗口，必须马上发。
+  // 同时保留信号机制 fallback：若立即发碰到 11005（channel 未就绪），
+  // 等首个 DP 上报确认 channel 可用后重发，超时 4s 兜底。
   void _publishDeviceSymbolAfterFirstDp(
     String bluetoothId,
     String position,
     String? devId,
   ) {
-    if (devId == null || devId.isEmpty) {
-      _publishDeviceSymbolThrice(bluetoothId, position);
-      return;
-    }
+    // 立即发 — 抢在设备的 LR 分配超时窗口内
+    _publishDeviceSymbolThrice(bluetoothId, position);
 
+    if (devId == null || devId.isEmpty) return;
+
+    // Fallback：等首个 DP report（channel 就绪信号）再发一次，覆盖立即发失败(11005)的情形
     waitFirstDpOrTimeout(
       deviceIdStream: BleDpService.dpReportStream.map((r) => r.deviceId),
       targetDevId: devId,
