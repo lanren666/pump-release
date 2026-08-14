@@ -1397,8 +1397,16 @@ class _HomePageState extends State<HomePage>
         // (Android always sends "", iOS sends the BLE UUID instead of the devId).
         // Passing the real devId lets native skip re-activation for devices that
         // re-enter advertising mode (isActive=false) after a disconnect.
+        //
+        // Only use the stored devId if the device is currently remembered (i.e. not
+        // deleted). A deleted record (isRemembered=false) leaves a stale devId in the
+        // DB that was already removed from the Tuya cloud via removeDevice. Passing
+        // that stale devId to native causes it to skip activation and attempt a direct
+        // connect against an orphaned/factory-reset device, which fails immediately.
         final dbDeviceForConnect = await _dbService.getDeviceByBluetoothId(device.bluetoothId);
-        final existingDevId = dbDeviceForConnect?.devId ?? '';
+        final existingDevId = (dbDeviceForConnect?.isRemembered == true)
+            ? (dbDeviceForConnect?.devId ?? '')
+            : '';
 
         final Map<String, dynamic> connectParams = {
           'deviceId': device.bluetoothId,
@@ -1582,8 +1590,10 @@ class _HomePageState extends State<HomePage>
           }
         }
 
+        // Clear devId so a future re-pairing of the same physical device does not
+        // inherit a stale Tuya devId that was already removed from the cloud.
         await _dbService.updateDevice(
-          device.copyWith(isRemembered: false, isRunning: false),
+          device.copyWith(isRemembered: false, isRunning: false, devId: ''),
         );
       }
 
