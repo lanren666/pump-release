@@ -847,47 +847,44 @@ class _HomePageState extends State<HomePage>
                   mainAxisAlignment: MainAxisAlignment.start,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    const SizedBox(height: 48),
-                    Container(
-                      width: ResponsiveText.getSize(context, 100),
-                      height: ResponsiveText.getSize(context, 100),
-                      decoration: BoxDecoration(
-                        color: AppColor.primaryPurple,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.bluetooth,
-                        color: AppColor.white,
-                        size: ResponsiveText.getSize(context, 50),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      AppLocalizations.of(context)!.breastPumpControl,
-                      style: ResponsiveText.title(
-                        context,
-                        color: AppColor.textPrimary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      AppLocalizations.of(
-                        context,
-                      )!.connectYourWearableBreastPump,
-                      style: ResponsiveText.title(
-                        context,
-                        color: const Color(0xFF6B6B6B),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 36),
-                    _buildSearchButton(),
-                    const SizedBox(height: 24),
                     Expanded(
                       child: SingleChildScrollView(
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.bluetooth,
+                                  color: AppColor.primaryPurple,
+                                  size: 22,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  AppLocalizations.of(context)!.breastPumpControl,
+                                  style: ResponsiveText.smallTitle(
+                                    context,
+                                    color: AppColor.textPrimary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              AppLocalizations.of(context)!.connectYourWearableBreastPump,
+                              style: ResponsiveText.bodySmall(
+                                context,
+                                color: const Color(0xFF6B6B6B),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildQuickConnectGuide(),
+                            const SizedBox(height: 12),
+                            _buildSearchButton(),
+                            const SizedBox(height: 24),
                             if (_connectedDevices.isNotEmpty)
                               _buildConnectedDevicesList(),
                             if (_searchState == SearchState.found &&
@@ -895,12 +892,12 @@ class _HomePageState extends State<HomePage>
                               const SizedBox(height: 24),
                               _buildDevicesList(),
                             ],
+                            const SizedBox(height: 16),
                           ],
                         ),
                       ),
                     ),
                     if (_connectedDevices.isNotEmpty) ...[
-                      const SizedBox(height: 16),
                       _buildContinueButton(),
                       const SizedBox(height: 24),
                     ],
@@ -911,6 +908,17 @@ class _HomePageState extends State<HomePage>
             if (_isStatusMessageVisible) _buildAnimatedStatusMessage(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildQuickConnectGuide() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Image.asset(
+        'assets/images/quick_connect_guide.png',
+        width: double.infinity,
+        fit: BoxFit.fitWidth,
       ),
     );
   }

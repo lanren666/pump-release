@@ -811,6 +811,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not open the filing website. Please try again later.'**
   String get icpFilingOpenFailed;
+
+  /// Title of the first-time quick connect guide card on the home page
+  ///
+  /// In en, this message translates to:
+  /// **'How to Quick Connect'**
+  String get quickConnectGuideTitle;
+
+  /// Step 1 title in quick connect guide
+  ///
+  /// In en, this message translates to:
+  /// **'Power on'**
+  String get quickConnectStep1Title;
+
+  /// Step 1 description in quick connect guide
+  ///
+  /// In en, this message translates to:
+  /// **'Press and hold the power button to turn on the pump.'**
+  String get quickConnectStep1Desc;
+
+  /// Step 2 title in quick connect guide
+  ///
+  /// In en, this message translates to:
+  /// **'Enter Bluetooth mode'**
+  String get quickConnectStep2Title;
+
+  /// Step 2 description in quick connect guide
+  ///
+  /// In en, this message translates to:
+  /// **'Press and hold the switch button to enter Bluetooth mode.'**
+  String get quickConnectStep2Desc;
+
+  /// Step 3 title in quick connect guide
+  ///
+  /// In en, this message translates to:
+  /// **'Search & connect'**
+  String get quickConnectStep3Title;
+
+  /// Step 3 description in quick connect guide
+  ///
+  /// In en, this message translates to:
+  /// **'When the L/R indicator on the pump flashes, tap the button below to search for devices and connect.'**
+  String get quickConnectStep3Desc;
+
+  /// Subtitle of the quick connect guide card
+  ///
+  /// In en, this message translates to:
+  /// **'After first pairing, pump auto-connects on power-on; long-press the switch button to reset Bluetooth pairing'**
+  String get quickConnectGuideSubtitle;
+
+  /// Button to dismiss the quick connect guide card
+  ///
+  /// In en, this message translates to:
+  /// **'Got it'**
+  String get quickConnectGuideDismiss;
 }
 
 class _AppLocalizationsDelegate

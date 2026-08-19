@@ -397,4 +397,35 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get icpFilingOpenFailed =>
       'Could not open the filing website. Please try again later.';
+
+  @override
+  String get quickConnectGuideTitle => 'How to Quick Connect';
+
+  @override
+  String get quickConnectStep1Title => 'Power on';
+
+  @override
+  String get quickConnectStep1Desc =>
+      'Press and hold the power button to turn on the pump.';
+
+  @override
+  String get quickConnectStep2Title => 'Enter Bluetooth mode';
+
+  @override
+  String get quickConnectStep2Desc =>
+      'Press and hold the switch button to enter Bluetooth mode.';
+
+  @override
+  String get quickConnectStep3Title => 'Search & connect';
+
+  @override
+  String get quickConnectStep3Desc =>
+      'When the L/R indicator on the pump flashes, tap the button below to search for devices and connect.';
+
+  @override
+  String get quickConnectGuideSubtitle =>
+      'After first pairing, pump auto-connects on power-on; long-press the switch button to reset Bluetooth pairing';
+
+  @override
+  String get quickConnectGuideDismiss => 'Got it';
 }

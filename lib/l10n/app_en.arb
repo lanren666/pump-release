@@ -510,6 +510,42 @@
   "icpFilingOpenFailed": "Could not open the filing website. Please try again later.",
   "@icpFilingOpenFailed": {
     "description": "Shown when opening MIIT filing URL fails"
+  },
+  "quickConnectGuideTitle": "How to Quick Connect",
+  "@quickConnectGuideTitle": {
+    "description": "Title of the first-time quick connect guide card on the home page"
+  },
+  "quickConnectStep1Title": "Power on",
+  "@quickConnectStep1Title": {
+    "description": "Step 1 title in quick connect guide"
+  },
+  "quickConnectStep1Desc": "Press and hold the power button to turn on the pump.",
+  "@quickConnectStep1Desc": {
+    "description": "Step 1 description in quick connect guide"
+  },
+  "quickConnectStep2Title": "Enter Bluetooth mode",
+  "@quickConnectStep2Title": {
+    "description": "Step 2 title in quick connect guide"
+  },
+  "quickConnectStep2Desc": "Press and hold the switch button to enter Bluetooth mode.",
+  "@quickConnectStep2Desc": {
+    "description": "Step 2 description in quick connect guide"
+  },
+  "quickConnectStep3Title": "Search & connect",
+  "@quickConnectStep3Title": {
+    "description": "Step 3 title in quick connect guide"
+  },
+  "quickConnectStep3Desc": "When the L/R indicator on the pump flashes, tap the button below to search for devices and connect.",
+  "@quickConnectStep3Desc": {
+    "description": "Step 3 description in quick connect guide"
+  },
+  "quickConnectGuideSubtitle": "After first pairing, pump auto-connects on power-on; long-press the switch button to reset Bluetooth pairing",
+  "@quickConnectGuideSubtitle": {
+    "description": "Subtitle of the quick connect guide card"
+  },
+  "quickConnectGuideDismiss": "Got it",
+  "@quickConnectGuideDismiss": {
+    "description": "Button to dismiss the quick connect guide card"
   }
 }
 

@@ -375,4 +375,32 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get icpFilingOpenFailed => '无法打开备案查询页面，请稍后重试。';
+
+  @override
+  String get quickConnectGuideTitle => '如何快速连接';
+
+  @override
+  String get quickConnectStep1Title => '开机';
+
+  @override
+  String get quickConnectStep1Desc => '首先长按电源键开机。';
+
+  @override
+  String get quickConnectStep2Title => '进入蓝牙模式';
+
+  @override
+  String get quickConnectStep2Desc => '长按切换按钮进入蓝牙模式。';
+
+  @override
+  String get quickConnectStep3Title => '搜索并连接';
+
+  @override
+  String get quickConnectStep3Desc =>
+      '主机屏幕上 L/R 指示灯闪烁表示已进入蓝牙连接模式，点击下方按钮即可搜索设备并建立连接。';
+
+  @override
+  String get quickConnectGuideSubtitle => '首次配对后开机自动蓝牙连接；长按切换键将重置蓝牙配对';
+
+  @override
+  String get quickConnectGuideDismiss => '知道了';
 }
