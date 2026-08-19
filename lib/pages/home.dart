@@ -1408,6 +1408,10 @@ class _HomePageState extends State<HomePage>
             ? (dbDeviceForConnect?.devId ?? '')
             : '';
 
+        debugPrint('🔌 [connectDevice] bluetoothId=${device.bluetoothId} '
+            'dbIsRemembered=${dbDeviceForConnect?.isRemembered} '
+            'existingDevId=${existingDevId.isEmpty ? "(empty)" : existingDevId}');
+
         final Map<String, dynamic> connectParams = {
           'deviceId': device.bluetoothId,
           'uuid': device.uuid,
@@ -1421,9 +1425,11 @@ class _HomePageState extends State<HomePage>
             : readyHomeId;
         connectParams['homeId'] = int.parse(effectiveHomeId);
 
+        debugPrint('🔌 [connectDevice] invokeMethod 开始 bluetoothId=${device.bluetoothId}');
         final connectionResult = await connectionChannel
             .invokeMethod('connectDevice', connectParams)
             .timeout(const Duration(seconds: 55));
+        debugPrint('🔌 [connectDevice] invokeMethod 返回 bluetoothId=${device.bluetoothId} result=$connectionResult');
         // 处理返回结果：可能是bool（旧版本兼容）或Map（新版本包含devId）
         if (connectionResult is bool) {
           result = connectionResult;
