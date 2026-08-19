@@ -972,7 +972,7 @@ extension Date {
     }
 
     // 直接连接设备（已配网）
-    private func connectDeviceDirectly(deviceId: String, uuid: String, productKey: String, devId: String? = nil, result: @escaping FlutterResult) {
+    private func connectDeviceDirectly(deviceId: String, uuid: String, productKey: String, devId: String? = nil, timeout: Int = 50, result: @escaping FlutterResult) {
         print("🔗 开始连接设备: \(deviceId)")
         updateConnectionState(deviceId: deviceId, state: "connecting")
 
@@ -987,8 +987,35 @@ extension Date {
             }
         }
 
+        // Guard: ensure result() is called at most once (SDK callback + timeout timer
+        // both hold a reference and could otherwise fire a double-reply).
+        let lock = NSLock()
+        var responded = false
+        let respondOnce: (Any?) -> Void = { value in
+            lock.lock()
+            let shouldRespond = !responded
+            responded = true
+            lock.unlock()
+            if shouldRespond { result(value) }
+        }
+
+        // Timeout guard — connectBLE has no built-in timeout; without this the Flutter
+        // await hangs indefinitely if BLE handshake never completes.
+        let timeoutItem = DispatchWorkItem { [weak self] in
+            print("⏰ 连接超时: \(deviceId), \(timeout)秒内未收到响应")
+            self?.updateConnectionState(deviceId: deviceId, state: "disconnected", error: "Connection timeout")
+            respondOnce(FlutterError(
+                code: "CONNECTION_TIMEOUT",
+                message: "Connection timeout after \(timeout)s",
+                details: ["deviceId": deviceId, "uuid": uuid]
+            ))
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(timeout), execute: timeoutItem)
+
         // 根据文档使用 connectBLEWithUUID 方法连接离线设备
+        print("📶 [connectDirectly] connectBLE 发起: uuid=\(uuid) finalDevId=\(finalDevId.isEmpty ? "(empty)" : finalDevId) timeout=\(timeout)s")
         ThingSmartBLEManager.sharedInstance().connectBLE(withUUID: uuid, productKey: productKey, success: { [weak self] in
+            timeoutItem.cancel()
             let successMsg = "✅ 设备连接成功: \(deviceId)"
             NSLog("%@", successMsg)
             print(successMsg)
@@ -1000,17 +1027,18 @@ extension Date {
             } else {
                 print("⚠️ devId为空，无法设置DP监听: bluetoothId=\(deviceId)")
             }
-            
+
             // 返回包含devId的字典
             let resultData: [String: Any] = [
                 "success": true,
                 "devId": finalDevId
             ]
-            result(resultData)
+            respondOnce(resultData)
         }, failure: { [weak self] in
+            timeoutItem.cancel()
             let errorMessage = "Connection failed"
             self?.updateConnectionState(deviceId: deviceId, state: "disconnected", error: errorMessage)
-            result(FlutterError(
+            respondOnce(FlutterError(
                 code: "CONNECTION_FAILED",
                 message: errorMessage,
                 details: [

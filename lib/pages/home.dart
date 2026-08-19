@@ -1412,7 +1412,7 @@ class _HomePageState extends State<HomePage>
           'deviceId': device.bluetoothId,
           'uuid': device.uuid,
           'productKey': device.productKey,
-          'timeout': 30,
+          'timeout': 50,
           if (existingDevId.isNotEmpty) 'devId': existingDevId,
         };
 
@@ -1421,11 +1421,9 @@ class _HomePageState extends State<HomePage>
             : readyHomeId;
         connectParams['homeId'] = int.parse(effectiveHomeId);
 
-        final connectionResult = await connectionChannel.invokeMethod(
-          'connectDevice',
-          connectParams,
-        );
-        
+        final connectionResult = await connectionChannel
+            .invokeMethod('connectDevice', connectParams)
+            .timeout(const Duration(seconds: 55));
         // 处理返回结果：可能是bool（旧版本兼容）或Map（新版本包含devId）
         if (connectionResult is bool) {
           result = connectionResult;
@@ -1565,8 +1563,13 @@ class _HomePageState extends State<HomePage>
       }
       return false;
     } catch (e) {
-      debugPrint('❌ 连接设备出错: $e');
-      AppLogger.e('user', 'connectDevice error', {'error': e.toString()});
+      if (e is TimeoutException) {
+        debugPrint('⏰ [connectDevice] Dart 侧超时 bluetoothId=${device.bluetoothId}');
+        AppLogger.e('user', 'connectDevice timeout', {'bluetoothId': device.bluetoothId});
+      } else {
+        debugPrint('❌ 连接设备出错: $e');
+        AppLogger.e('user', 'connectDevice error', {'error': e.toString()});
+      }
       return false;
     }
   }
