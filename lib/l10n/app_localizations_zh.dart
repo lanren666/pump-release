@@ -403,4 +403,75 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get quickConnectGuideDismiss => '知道了';
+
+  @override
+  String get videoTutorials => '视频教程';
+
+  @override
+  String get videoCategoryFirstUse => '初次使用';
+
+  @override
+  String get videoFeatured => '精选';
+
+  @override
+  String get videoCountOne => '个视频';
+
+  @override
+  String get videoCountOther => '个视频';
+
+  @override
+  String get videoUpNext => '接下来播放';
+
+  @override
+  String get videoOfficialSource => 'SporraMom 官方';
+
+  @override
+  String get videoLoadFailed => '视频加载失败，请检查网络后重试。';
+
+  @override
+  String get videoRetry => '重试';
+
+  @override
+  String get videoGettingStartedTitle => '首次使用教程';
+
+  @override
+  String get videoGettingStartedSubtitle => 'APP 下载＆使用•乳头测试卡•佩戴方法';
+
+  @override
+  String get videoGettingStartedDescription =>
+      '首次使用全流程指引，涵盖三大步骤：① SporraMom麋鹿妈妈APP 下载与蓝牙配对；② 乳头测试卡的使用方法，帮您找到最适合的法兰罩尺寸；③ 吸奶器的正确佩戴姿势与舒适度调整技巧。';
+
+  @override
+  String get videoAssemblyTitle => 'W3 吸奶器安装教程';
+
+  @override
+  String get videoAssemblySubtitle => '快速组装，轻松上手';
+
+  @override
+  String get videoAssemblyDescription =>
+      '手把手演示 SporraMom麋鹿妈妈W3 吸奶器各部件的正确组装顺序，包括集乳杯、硅胶隔膜、喇叭罩、鸭嘴阀等的安装方法及密封性检查，帮助您在首次使用前完成完整安装。';
+
+  @override
+  String get videoCleaningTitle => 'W3 吸奶器拆洗教程';
+
+  @override
+  String get videoCleaningSubtitle => '便捷拆装、轻松清洗';
+
+  @override
+  String get videoCleaningDescription =>
+      '详细演示 W3 吸奶器各零部件的拆卸方法、清洗步骤与晾干建议，以及需清洗部件和无需清洗部件的区分，确保每次使用都卫生安全。';
+
+  @override
+  String get helpMenuSection => '帮助';
+
+  @override
+  String get faqs => '常见问题';
+
+  @override
+  String get userManual => '用户手册';
+
+  @override
+  String featureComingSoon(String feature) {
+    return '$feature即将上线';
+  }
 }

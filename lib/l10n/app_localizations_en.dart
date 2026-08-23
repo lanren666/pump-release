@@ -428,4 +428,78 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get quickConnectGuideDismiss => 'Got it';
+
+  @override
+  String get videoTutorials => 'Video Tutorials';
+
+  @override
+  String get videoCategoryFirstUse => 'First Use';
+
+  @override
+  String get videoFeatured => 'Featured';
+
+  @override
+  String get videoCountOne => 'video';
+
+  @override
+  String get videoCountOther => 'videos';
+
+  @override
+  String get videoUpNext => 'Up Next';
+
+  @override
+  String get videoOfficialSource => 'SpornaMom Official';
+
+  @override
+  String get videoLoadFailed =>
+      'Could not load the video. Check your network and try again.';
+
+  @override
+  String get videoRetry => 'Retry';
+
+  @override
+  String get videoGettingStartedTitle => 'First-Time Use Tutorial';
+
+  @override
+  String get videoGettingStartedSubtitle =>
+      'App download & setup · Nipple sizing card · How to wear';
+
+  @override
+  String get videoGettingStartedDescription =>
+      'A complete first-time guide covering three key steps: ① Downloading the SporraMom app and pairing via Bluetooth; ② How to use the nipple sizing card to find your ideal flange size; ③ Correct pump placement and comfort adjustment tips.';
+
+  @override
+  String get videoAssemblyTitle => 'W3 Breast Pump Assembly Tutorial';
+
+  @override
+  String get videoAssemblySubtitle => 'Quick assembly, easy to get started';
+
+  @override
+  String get videoAssemblyDescription =>
+      'A hands-on walkthrough of the correct assembly order for SporraMom W3 breast pump parts, including the milk collection cup, silicone diaphragm, flange, duckbill valve, and more — plus a seal check to help you complete full installation before first use.';
+
+  @override
+  String get videoCleaningTitle =>
+      'W3 Breast Pump Cleaning & Disassembly Tutorial';
+
+  @override
+  String get videoCleaningSubtitle => 'Easy disassembly, effortless cleaning';
+
+  @override
+  String get videoCleaningDescription =>
+      'A detailed demonstration of how to disassemble W3 breast pump parts, cleaning steps and drying tips, and which parts need washing vs. which do not — to keep every session safe and hygienic.';
+
+  @override
+  String get helpMenuSection => 'Help';
+
+  @override
+  String get faqs => 'FAQs';
+
+  @override
+  String get userManual => 'User Manual';
+
+  @override
+  String featureComingSoon(String feature) {
+    return '$feature coming soon';
+  }
 }

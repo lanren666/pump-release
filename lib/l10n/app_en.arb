@@ -546,6 +546,99 @@
   "quickConnectGuideDismiss": "Got it",
   "@quickConnectGuideDismiss": {
     "description": "Button to dismiss the quick connect guide card"
+  },
+  "videoTutorials": "Video Tutorials",
+  "@videoTutorials": {
+    "description": "Title for the first-use video tutorials page"
+  },
+  "videoCategoryFirstUse": "First Use",
+  "@videoCategoryFirstUse": {
+    "description": "Category label for first-use tutorial videos"
+  },
+  "videoFeatured": "Featured",
+  "@videoFeatured": {
+    "description": "Section label for the featured tutorial video"
+  },
+  "videoCountOne": "video",
+  "@videoCountOne": {
+    "description": "Singular label when showing tutorial video count"
+  },
+  "videoCountOther": "videos",
+  "@videoCountOther": {
+    "description": "Plural label when showing tutorial video count"
+  },
+  "videoUpNext": "Up Next",
+  "@videoUpNext": {
+    "description": "Section title for related tutorial videos on the player page"
+  },
+  "videoOfficialSource": "SpornaMom Official",
+  "@videoOfficialSource": {
+    "description": "Publisher label shown on the video player page"
+  },
+  "videoLoadFailed": "Could not load the video. Check your network and try again.",
+  "@videoLoadFailed": {
+    "description": "Shown when a remote tutorial video fails to load"
+  },
+  "videoRetry": "Retry",
+  "@videoRetry": {
+    "description": "Retry button on the video player error state"
+  },
+  "videoGettingStartedTitle": "First-Time Use Tutorial",
+  "@videoGettingStartedTitle": {
+    "description": "Title for the first-use getting started tutorial video"
+  },
+  "videoGettingStartedSubtitle": "App download & setup · Nipple sizing card · How to wear",
+  "@videoGettingStartedSubtitle": {
+    "description": "Subtitle for the getting started tutorial video"
+  },
+  "videoGettingStartedDescription": "A complete first-time guide covering three key steps: ① Downloading the SporraMom app and pairing via Bluetooth; ② How to use the nipple sizing card to find your ideal flange size; ③ Correct pump placement and comfort adjustment tips.",
+  "@videoGettingStartedDescription": {
+    "description": "Description for the getting started tutorial video"
+  },
+  "videoAssemblyTitle": "W3 Breast Pump Assembly Tutorial",
+  "@videoAssemblyTitle": {
+    "description": "Title for the assembly tutorial video"
+  },
+  "videoAssemblySubtitle": "Quick assembly, easy to get started",
+  "@videoAssemblySubtitle": {
+    "description": "Subtitle for the assembly tutorial video"
+  },
+  "videoAssemblyDescription": "A hands-on walkthrough of the correct assembly order for SporraMom W3 breast pump parts, including the milk collection cup, silicone diaphragm, flange, duckbill valve, and more — plus a seal check to help you complete full installation before first use.",
+  "@videoAssemblyDescription": {
+    "description": "Description for the assembly tutorial video"
+  },
+  "videoCleaningTitle": "W3 Breast Pump Cleaning & Disassembly Tutorial",
+  "@videoCleaningTitle": {
+    "description": "Title for the cleaning tutorial video"
+  },
+  "videoCleaningSubtitle": "Easy disassembly, effortless cleaning",
+  "@videoCleaningSubtitle": {
+    "description": "Subtitle for the cleaning tutorial video"
+  },
+  "videoCleaningDescription": "A detailed demonstration of how to disassemble W3 breast pump parts, cleaning steps and drying tips, and which parts need washing vs. which do not — to keep every session safe and hygienic.",
+  "@videoCleaningDescription": {
+    "description": "Description for the cleaning tutorial video"
+  },
+  "helpMenuSection": "Help",
+  "@helpMenuSection": {
+    "description": "Expandable Help section label in the side menu"
+  },
+  "faqs": "FAQs",
+  "@faqs": {
+    "description": "FAQs submenu item under Help in the side menu"
+  },
+  "userManual": "User Manual",
+  "@userManual": {
+    "description": "User manual submenu item under Help in the side menu"
+  },
+  "featureComingSoon": "{feature} coming soon",
+  "@featureComingSoon": {
+    "description": "Shown when a help submenu feature is not implemented yet",
+    "placeholders": {
+      "feature": {
+        "type": "String"
+      }
+    }
   }
 }
 

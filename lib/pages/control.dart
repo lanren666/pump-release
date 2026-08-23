@@ -13,7 +13,7 @@ import 'custom_flow_config.dart';
 import 'home.dart';
 import 'settings.dart';
 import 'system_settings.dart';
-import 'help_about.dart';
+import 'video_tutorials_page.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../services/tuya/dp_constants.dart';
 import '../services/tuya/ble_dp_service.dart';
@@ -118,6 +118,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   int _maxDuration = 20;
   int? _deviceMaxDuration;
   bool _isMenuOpen = false;
+  bool _isHelpExpanded = false;
   bool _isClosingForDeviceSettings = false;
   Duration _elapsedTime = Duration.zero;
   Duration _elapsedTimeInPhase = Duration.zero;
@@ -4579,40 +4580,6 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                       ),
                       SizedBox(height: ResponsiveText.getSize(context, 8)),
                       _buildMenuItem(
-                        icon: Icons.help_outline,
-                        title: AppLocalizations.of(context)!.helpAndAbout,
-                        onTap: () {
-                          setState(() {
-                            _isClosingForDeviceSettings = true;
-                            _isMenuOpen = false;
-                          });
-                          if (mounted) {
-                            Navigator.of(context)
-                                .push(
-                                  PageRouteBuilder(
-                                    pageBuilder:
-                                        (
-                                          context,
-                                          animation,
-                                          secondaryAnimation,
-                                        ) => const HelpAboutPage(),
-                                    transitionDuration: Duration.zero,
-                                    reverseTransitionDuration: Duration.zero,
-                                  ),
-                                )
-                                .then((_) {
-                                  if (mounted) {
-                                    setState(() {
-                                      _isClosingForDeviceSettings = false;
-                                      _isMenuOpen = false;
-                                    });
-                                  }
-                                });
-                          }
-                        },
-                      ),
-                      SizedBox(height: ResponsiveText.getSize(context, 8)),
-                      _buildMenuItem(
                         icon: Icons.bluetooth,
                         title: AppLocalizations.of(context)!.manageConnections,
                         onTap: () {
@@ -4631,6 +4598,8 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                           );
                         },
                       ),
+                      SizedBox(height: ResponsiveText.getSize(context, 8)),
+                      _buildExpandableHelpMenu(),
                       if (AppConfig.debug) ...[
                         SizedBox(height: ResponsiveText.getSize(context, 8)),
                         _buildMenuItem(
@@ -4690,6 +4659,113 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         ],
       ),
     );
+  }
+
+  Widget _buildExpandableHelpMenu() {
+    final l10n = AppLocalizations.of(context)!;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GestureDetector(
+          onTap: () => setState(() => _isHelpExpanded = !_isHelpExpanded),
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: ResponsiveText.symmetric(
+              context,
+              horizontal: 20,
+              vertical: 16,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.help_outline,
+                  color: Colors.black,
+                  size: ResponsiveText.getSize(context, 24),
+                ),
+                SizedBox(width: ResponsiveText.getSize(context, 16)),
+                Expanded(
+                  child: Text(
+                    l10n.helpMenuSection,
+                    style: ResponsiveText.smallTitle(
+                      context,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+                AnimatedRotation(
+                  turns: _isHelpExpanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    Icons.keyboard_arrow_down,
+                    color: Colors.black,
+                    size: ResponsiveText.getSize(context, 24),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_isHelpExpanded)
+          _buildHelpSubMenuItem(
+            title: l10n.videoTutorials,
+            onTap: _openVideoTutorials,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildHelpSubMenuItem({
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: ResponsiveText.getSize(context, 56),
+          right: ResponsiveText.getSize(context, 20),
+          top: ResponsiveText.getSize(context, 10),
+          bottom: ResponsiveText.getSize(context, 10),
+        ),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            title,
+            style: ResponsiveText.body(
+              context,
+              color: Colors.black87,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openVideoTutorials() {
+    setState(() {
+      _isClosingForDeviceSettings = true;
+      _isMenuOpen = false;
+    });
+    if (!mounted) return;
+    Navigator.of(context)
+        .push(
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                const VideoTutorialsPage(),
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+          ),
+        )
+        .then((_) {
+          if (mounted) {
+            setState(() {
+              _isClosingForDeviceSettings = false;
+              _isMenuOpen = false;
+            });
+          }
+        });
   }
 
   Widget _buildMenuItem({

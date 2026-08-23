@@ -915,6 +915,11 @@ PODS:
     - ThingSmartBusinessLibrary
   - ThingVoIPAPI (1.0.1)
   - TRCTResourceManager (5.8.1)
+  - video_player_avfoundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - wakelock_plus (0.0.1):
+    - Flutter
   - YYModel (1.0.4)
 
 DEPENDENCIES:
@@ -926,6 +931,8 @@ DEPENDENCIES:
   - ThingSmartActivatorBizBundle
   - ThingSmartCryption (from `./`)
   - ThingSmartHomeKit
+  - video_player_avfoundation (from `.symlinks/plugins/video_player_avfoundation/darwin`)
+  - wakelock_plus (from `.symlinks/plugins/wakelock_plus/ios`)
 
 SPEC REPOS:
   https://github.com/CocoaPods/Specs.git:
@@ -1104,6 +1111,10 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/sqflite_darwin/darwin"
   ThingSmartCryption:
     :path: "./"
+  video_player_avfoundation:
+    :path: ".symlinks/plugins/video_player_avfoundation/darwin"
+  wakelock_plus:
+    :path: ".symlinks/plugins/wakelock_plus/ios"
 
 SPEC CHECKSUMS:
   DACircularProgress: 4dd437c0fc3da5161cb289e07ac449493d41db71
@@ -1271,6 +1282,8 @@ SPEC CHECKSUMS:
   ThingVideoPlayer: a66c4171d824c6eed6ba59e14d3a78e4f2e54cb0
   ThingVoIPAPI: 42d21b6b7c7c83f61c483e9cecd56a00e759db10
   TRCTResourceManager: 8dbe838bb252de23f84c62c3838f6fd6c2f39cf0
+  video_player_avfoundation: dd410b52df6d2466a42d28550e33e4146928280a
+  wakelock_plus: e29112ab3ef0b318e58cfa5c32326458be66b556
   YYModel: 2a7fdd96aaa4b86a824e26d0c517de8928c04b30
 
 PODFILE CHECKSUM: ddcd3c992480be1181beb1d90c70a5494cd0493d

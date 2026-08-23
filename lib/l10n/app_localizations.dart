@@ -865,6 +865,138 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Got it'**
   String get quickConnectGuideDismiss;
+
+  /// Title for the first-use video tutorials page
+  ///
+  /// In en, this message translates to:
+  /// **'Video Tutorials'**
+  String get videoTutorials;
+
+  /// Category label for first-use tutorial videos
+  ///
+  /// In en, this message translates to:
+  /// **'First Use'**
+  String get videoCategoryFirstUse;
+
+  /// Section label for the featured tutorial video
+  ///
+  /// In en, this message translates to:
+  /// **'Featured'**
+  String get videoFeatured;
+
+  /// Singular label when showing tutorial video count
+  ///
+  /// In en, this message translates to:
+  /// **'video'**
+  String get videoCountOne;
+
+  /// Plural label when showing tutorial video count
+  ///
+  /// In en, this message translates to:
+  /// **'videos'**
+  String get videoCountOther;
+
+  /// Section title for related tutorial videos on the player page
+  ///
+  /// In en, this message translates to:
+  /// **'Up Next'**
+  String get videoUpNext;
+
+  /// Publisher label shown on the video player page
+  ///
+  /// In en, this message translates to:
+  /// **'SpornaMom Official'**
+  String get videoOfficialSource;
+
+  /// Shown when a remote tutorial video fails to load
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load the video. Check your network and try again.'**
+  String get videoLoadFailed;
+
+  /// Retry button on the video player error state
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get videoRetry;
+
+  /// Title for the first-use getting started tutorial video
+  ///
+  /// In en, this message translates to:
+  /// **'First-Time Use Tutorial'**
+  String get videoGettingStartedTitle;
+
+  /// Subtitle for the getting started tutorial video
+  ///
+  /// In en, this message translates to:
+  /// **'App download & setup · Nipple sizing card · How to wear'**
+  String get videoGettingStartedSubtitle;
+
+  /// Description for the getting started tutorial video
+  ///
+  /// In en, this message translates to:
+  /// **'A complete first-time guide covering three key steps: ① Downloading the SporraMom app and pairing via Bluetooth; ② How to use the nipple sizing card to find your ideal flange size; ③ Correct pump placement and comfort adjustment tips.'**
+  String get videoGettingStartedDescription;
+
+  /// Title for the assembly tutorial video
+  ///
+  /// In en, this message translates to:
+  /// **'W3 Breast Pump Assembly Tutorial'**
+  String get videoAssemblyTitle;
+
+  /// Subtitle for the assembly tutorial video
+  ///
+  /// In en, this message translates to:
+  /// **'Quick assembly, easy to get started'**
+  String get videoAssemblySubtitle;
+
+  /// Description for the assembly tutorial video
+  ///
+  /// In en, this message translates to:
+  /// **'A hands-on walkthrough of the correct assembly order for SporraMom W3 breast pump parts, including the milk collection cup, silicone diaphragm, flange, duckbill valve, and more — plus a seal check to help you complete full installation before first use.'**
+  String get videoAssemblyDescription;
+
+  /// Title for the cleaning tutorial video
+  ///
+  /// In en, this message translates to:
+  /// **'W3 Breast Pump Cleaning & Disassembly Tutorial'**
+  String get videoCleaningTitle;
+
+  /// Subtitle for the cleaning tutorial video
+  ///
+  /// In en, this message translates to:
+  /// **'Easy disassembly, effortless cleaning'**
+  String get videoCleaningSubtitle;
+
+  /// Description for the cleaning tutorial video
+  ///
+  /// In en, this message translates to:
+  /// **'A detailed demonstration of how to disassemble W3 breast pump parts, cleaning steps and drying tips, and which parts need washing vs. which do not — to keep every session safe and hygienic.'**
+  String get videoCleaningDescription;
+
+  /// Expandable Help section label in the side menu
+  ///
+  /// In en, this message translates to:
+  /// **'Help'**
+  String get helpMenuSection;
+
+  /// FAQs submenu item under Help in the side menu
+  ///
+  /// In en, this message translates to:
+  /// **'FAQs'**
+  String get faqs;
+
+  /// User manual submenu item under Help in the side menu
+  ///
+  /// In en, this message translates to:
+  /// **'User Manual'**
+  String get userManual;
+
+  /// Shown when a help submenu feature is not implemented yet
+  ///
+  /// In en, this message translates to:
+  /// **'{feature} coming soon'**
+  String featureComingSoon(String feature);
 }
 
 class _AppLocalizationsDelegate
