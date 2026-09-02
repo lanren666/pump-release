@@ -58,15 +58,32 @@ class ControlNavigationResumeLogic {
   /// whether to safe-update (no tab switch) or let auto-switch proceed.
   ///
   /// Safe-update fires when the Both session is already in progress (either
-  /// the app already marked it started, or sequential start is underway).
+  /// the app already marked it started, sequential start is underway, or the
+  /// user started this session as Both).  [sessionStartedAsBoth] stays true
+  /// across BLE / DB flickers that clear hasStarted, so a mid-session drop
+  /// cannot be misread as a hardware manual start.
   static bool shouldSafeUpdateBothMode({
     required PumpSelection selectedPump,
     required bool bothStartInProgress,
     required bool leftHasStarted,
     required bool rightHasStarted,
+    bool sessionStartedAsBoth = false,
   }) {
     return selectedPump == PumpSelection.both &&
-        (bothStartInProgress || leftHasStarted || rightHasStarted);
+        (bothStartInProgress ||
+            leftHasStarted ||
+            rightHasStarted ||
+            sessionStartedAsBoth);
+  }
+
+  /// True after a real session-end cleanup once both sides are idle.
+  /// Must not be used on a BLE / DB-offline clear of hasStarted.
+  static bool shouldClearSessionStartedAsBoth({
+    required bool leftHasStarted,
+    required bool rightHasStarted,
+    required bool isSessionEndCleanup,
+  }) {
+    return isSessionEndCleanup && !leftHasStarted && !rightHasStarted;
   }
 
   /// Whether the battery-alert flag should be cleared for the reporting device.

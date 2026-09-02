@@ -62,7 +62,7 @@ void main() {
     });
 
     group('timerDisplayHasStarted', () {
-      test('Both unified mode requires both sides started', () {
+      test('Both unified + both started → show timer', () {
         expect(
           ControlTimerDisplayLogic.timerDisplayHasStarted(
             useBothUnifiedRules: true,
@@ -72,12 +72,50 @@ void main() {
           ),
           isTrue,
         );
+      });
+
+      test('sequential Both start with only left up → hide timer', () {
         expect(
           ControlTimerDisplayLogic.timerDisplayHasStarted(
             useBothUnifiedRules: true,
             leftHasStarted: true,
             rightHasStarted: false,
             singleSideHasStarted: true,
+            bothStartInProgress: true,
+          ),
+          isFalse,
+        );
+      });
+
+      test('mid-session one side dropped → keep showing timer', () {
+        expect(
+          ControlTimerDisplayLogic.timerDisplayHasStarted(
+            useBothUnifiedRules: true,
+            leftHasStarted: true,
+            rightHasStarted: false,
+            singleSideHasStarted: true,
+            bothStartInProgress: false,
+          ),
+          isTrue,
+        );
+        expect(
+          ControlTimerDisplayLogic.timerDisplayHasStarted(
+            useBothUnifiedRules: true,
+            leftHasStarted: false,
+            rightHasStarted: true,
+            singleSideHasStarted: true,
+          ),
+          isTrue,
+        );
+      });
+
+      test('Both idle (neither started) → hide timer', () {
+        expect(
+          ControlTimerDisplayLogic.timerDisplayHasStarted(
+            useBothUnifiedRules: true,
+            leftHasStarted: false,
+            rightHasStarted: false,
+            singleSideHasStarted: false,
           ),
           isFalse,
         );
@@ -90,6 +128,48 @@ void main() {
             leftHasStarted: false,
             rightHasStarted: false,
             singleSideHasStarted: true,
+          ),
+          isTrue,
+        );
+      });
+    });
+
+    group('useLeftTimeForBothDisplay', () {
+      test('both started → prefer left', () {
+        expect(
+          ControlTimerDisplayLogic.useLeftTimeForBothDisplay(
+            leftHasStarted: true,
+            rightHasStarted: true,
+          ),
+          isTrue,
+        );
+      });
+
+      test('only right started → use right so elapsed time stays visible', () {
+        expect(
+          ControlTimerDisplayLogic.useLeftTimeForBothDisplay(
+            leftHasStarted: false,
+            rightHasStarted: true,
+          ),
+          isFalse,
+        );
+      });
+
+      test('only left started → use left', () {
+        expect(
+          ControlTimerDisplayLogic.useLeftTimeForBothDisplay(
+            leftHasStarted: true,
+            rightHasStarted: false,
+          ),
+          isTrue,
+        );
+      });
+
+      test('neither started → default to left (idle Both card)', () {
+        expect(
+          ControlTimerDisplayLogic.useLeftTimeForBothDisplay(
+            leftHasStarted: false,
+            rightHasStarted: false,
           ),
           isTrue,
         );

@@ -8,7 +8,7 @@ import 'control_both_session_end_logic.dart';
 /// reconstruct them from widget state:
 ///
 ///   - elapsedSeconds   = _leftElapsedTime.inSeconds (last DP-105 value)
-///   - deviceMaxDuration / uiMaxDuration = _deviceMaxDuration ?? _maxDuration
+///   - deviceMaxDuration / uiMaxDuration = per-side firmware maxTime ?? _maxDuration
 ///
 /// Extracted so the decision can be unit-tested independently of the widget.
 class ControlDbRefreshKickLogic {

@@ -168,29 +168,21 @@ void main() {
         );
       });
 
-      // Regression guard: confirm that _pumpSessionModes remains independent
-      // (only _pumpMaxDurations is shared; session mode per pump is unchanged).
-      test('duration sync does not affect session-mode independence (static contract)',
-          () {
-        // Session modes are stored in a separate Map<PumpSelection, SessionMode>
-        // that is NOT touched by the duration fix.  We verify this contract by
-        // checking that a full _fixedUpdate on a durations-only map has no
-        // side effect on an independent session-mode map.
+      test('duration snapshot is independent of the SessionMode map object', () {
         const sessionModes = {
           PumpSelection.left: 'custom',
-          PumpSelection.right: 'default',
-          PumpSelection.both: 'default',
+          PumpSelection.right: 'custom',
+          PumpSelection.both: 'custom',
         };
         final durations = {
           PumpSelection.left: _defaultMax,
           PumpSelection.right: _defaultMax,
           PumpSelection.both: _defaultMax,
         };
-        _fixedUpdate(durations, 15); // mutate only durations
+        _fixedUpdate(durations, 15);
 
-        // Session modes should be unchanged.
         expect(sessionModes[PumpSelection.left], 'custom');
-        expect(sessionModes[PumpSelection.right], 'default');
+        expect(sessionModes[PumpSelection.right], 'custom');
       });
     });
 

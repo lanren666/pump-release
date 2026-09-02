@@ -266,6 +266,32 @@ void main() {
       );
     });
 
+    test('Both 会话已开始但 hasStarted 被 BLE 清掉 → 仍 safe update，不抢 tab', () {
+      expect(
+        ControlNavigationResumeLogic.shouldSafeUpdateBothMode(
+          selectedPump: PumpSelection.both,
+          bothStartInProgress: false,
+          leftHasStarted: false,
+          rightHasStarted: false,
+          sessionStartedAsBoth: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('sessionStartedAsBoth=false 且两侧都未开始 → 仍允许硬件启动切单侧', () {
+      expect(
+        ControlNavigationResumeLogic.shouldSafeUpdateBothMode(
+          selectedPump: PumpSelection.both,
+          bothStartInProgress: false,
+          leftHasStarted: false,
+          rightHasStarted: false,
+          sessionStartedAsBoth: false,
+        ),
+        isFalse,
+      );
+    });
+
     test('selectedPump=left → 不触发 both safe update', () {
       expect(
         ControlNavigationResumeLogic.shouldSafeUpdateBothMode(
@@ -351,6 +377,41 @@ void main() {
     });
   });
 
+  group('shouldClearSessionStartedAsBoth', () {
+    test('真实会话结束且两侧都 idle → 清除 flag', () {
+      expect(
+        ControlNavigationResumeLogic.shouldClearSessionStartedAsBoth(
+          leftHasStarted: false,
+          rightHasStarted: false,
+          isSessionEndCleanup: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('一侧仍在跑 → 不清除', () {
+      expect(
+        ControlNavigationResumeLogic.shouldClearSessionStartedAsBoth(
+          leftHasStarted: true,
+          rightHasStarted: false,
+          isSessionEndCleanup: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('BLE/DB 清 hasStarted 不是会话结束 → 不清除（保住 Both 会话标记）', () {
+      expect(
+        ControlNavigationResumeLogic.shouldClearSessionStartedAsBoth(
+          leftHasStarted: false,
+          rightHasStarted: false,
+          isSessionEndCleanup: false,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
   // 端到端场景模拟（组合多个 helper 验证完整流程）
   // ─────────────────────────────────────────────────────────────────────────
@@ -363,6 +424,7 @@ void main() {
       required bool isIndividualMode,
       required bool bothStartInProgress,
       required bool isLeftDevice,
+      bool sessionStartedAsBoth = false,
     }) {
       // step1: shouldUpdate
       final appIsRunning = ControlNavigationResumeLogic.getCurrentHasStarted(
@@ -383,6 +445,7 @@ void main() {
         bothStartInProgress: bothStartInProgress,
         leftHasStarted: leftHasStartedAfterLoad,
         rightHasStarted: rightHasStartedAfterLoad,
+        sessionStartedAsBoth: sessionStartedAsBoth,
       );
       if (safeUpdate) return selectedPump; // safe update，不切 tab
 
@@ -494,6 +557,32 @@ void main() {
         isLeftDevice: true,
       );
       expect(result, PumpSelection.left); // 不触发自动切换
+    });
+
+    test('【客诉】Both 会话中双侧 DB 瞬断清掉 hasStarted → DP 到来 → 保持 Both', () {
+      final result = simulateDp105(
+        PumpSelection.both,
+        leftHasStartedAfterLoad: false,
+        rightHasStartedAfterLoad: false,
+        isIndividualMode: false,
+        bothStartInProgress: false,
+        isLeftDevice: true,
+        sessionStartedAsBoth: true,
+      );
+      expect(result, PumpSelection.both);
+    });
+
+    test('未开始的 Both 页 + 单侧硬件启动 → 仍自动切到该侧', () {
+      final result = simulateDp105(
+        PumpSelection.both,
+        leftHasStartedAfterLoad: false,
+        rightHasStartedAfterLoad: false,
+        isIndividualMode: false,
+        bothStartInProgress: false,
+        isLeftDevice: false,
+        sessionStartedAsBoth: false,
+      );
+      expect(result, PumpSelection.right);
     });
 
     test('Both 顺序启动中（bothStartInProgress=true）→ DP 到来 → 不自动切换', () {

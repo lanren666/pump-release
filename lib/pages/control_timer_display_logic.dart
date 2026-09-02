@@ -21,14 +21,33 @@ class ControlTimerDisplayLogic {
     required bool leftHasStarted,
     required bool rightHasStarted,
     required bool singleSideHasStarted,
+    bool bothStartInProgress = false,
   }) {
     if (useBothUnifiedRules) {
-      return bothRunningTogether(
-        leftHasStarted: leftHasStarted,
-        rightHasStarted: rightHasStarted,
-      );
+      // Sequential Both start: wait until both sides are up so the card
+      // does not flash the first device's time.
+      if (bothStartInProgress) {
+        return bothRunningTogether(
+          leftHasStarted: leftHasStarted,
+          rightHasStarted: rightHasStarted,
+        );
+      }
+      // Mid-session: keep showing time if either side is still in-session
+      // (the other may have dropped over BLE).
+      return leftHasStarted || rightHasStarted;
     }
     return singleSideHasStarted;
+  }
+
+  /// Both unified card prefers left time; falls back to right when left
+  /// has dropped so the remaining side's elapsed time stays visible.
+  static bool useLeftTimeForBothDisplay({
+    required bool leftHasStarted,
+    required bool rightHasStarted,
+  }) {
+    if (leftHasStarted) return true;
+    if (rightHasStarted) return false;
+    return true;
   }
 
   static bool timerInitialStateUsesLeftDevice({

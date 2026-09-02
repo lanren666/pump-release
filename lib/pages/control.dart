@@ -31,6 +31,9 @@ import 'control_timer_display_logic.dart';
 import 'control_hybrid_pattern_logic.dart';
 import 'control_both_session_end_logic.dart';
 import 'control_db_refresh_kick_logic.dart';
+import 'control_session_settings_sync_logic.dart';
+import 'control_device_max_duration_logic.dart';
+import 'control_navigation_resume_logic.dart';
 import 'control_types.dart';
 import 'session_control_throttle_logic.dart';
 import 'timer_display_cache_logic.dart';
@@ -100,6 +103,10 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   DateTime? _bothSyncActionGraceUntil;
   String? _lastBothSyncFailReason;
   bool _isIndividualMode = false; // 标记是否已切换到独立模式
+  /// True from the moment the user starts a Both session until both sides
+  /// fully stop.  Survives BLE / DB flickers that clear hasStarted so DP105
+  /// cannot steal the tab to left/right.
+  bool _sessionStartedAsBoth = false;
 
   // 右侧设备状态
   IntensityMode _rightIntensityMode = IntensityMode.stimulation;
@@ -116,7 +123,8 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
   Duration _rightPhaseDuration = const Duration(minutes: 2);
 
   int _maxDuration = 20;
-  int? _deviceMaxDuration;
+  int? _leftDeviceMaxDuration;
+  int? _rightDeviceMaxDuration;
   bool _isMenuOpen = false;
   bool _isHelpExpanded = false;
   bool _isClosingForDeviceSettings = false;
@@ -403,7 +411,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         // debugPrint('⚠️ 设备已停止且 app 未在运行中，跳过配置下发: $deviceSide设备');
         final initialState = await _getInitialDeviceState(isLeftDevice);
         setState(() {
-          _deviceMaxDuration = maxTime;
+          _applyReportedDeviceMaxTime(isLeftDevice, maxTime);
 
           if (isLeftDevice) {
             _leftIsRunning = false;
@@ -448,6 +456,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             _bothNotSynchronizedCount = 0;
             debugPrint('✅ 所有设备已停止，退出独立模式');
           }
+          _maybeClearSessionStartedAsBoth(isSessionEndCleanup: true);
         });
         return;
       }
@@ -518,7 +527,10 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         //   debugPrint('⚠️ 设备状态不一致: $deviceSide已停止，但另一边还在运行');
         // }
         setState(() {
-          if (!otherSideRunning) _deviceMaxDuration = null;
+          _clearDeviceMaxTimeOnStop(
+            isLeftDevice: isLeftDevice,
+            otherSideRunning: otherSideRunning,
+          );
           if (isLeftDevice) {
             _leftIsRunning = false;
             _leftHasStarted = false;
@@ -562,6 +574,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             _bothNotSynchronizedCount = 0;
             debugPrint('✅ 所有设备已停止，退出独立模式');
           }
+          _maybeClearSessionStartedAsBoth(isSessionEndCleanup: true);
         });
       } else {
         if (AppConfig.tuyaEnabled) {
@@ -595,7 +608,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
           }
         }
         setState(() {
-          _deviceMaxDuration = maxTime;
+          _applyReportedDeviceMaxTime(isLeftDevice, maxTime);
 
           if (isLeftDevice) {
             _leftIsRunning = false;
@@ -640,6 +653,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             _bothNotSynchronizedCount = 0;
             debugPrint('✅ 所有设备已停止，退出独立模式');
           }
+          _maybeClearSessionStartedAsBoth(isSessionEndCleanup: true);
         });
       }
     } else if (isRunning == 1) {
@@ -670,7 +684,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       final shouldUpdate = appIsRunning || _isIndividualMode;
       if (shouldUpdate) {
         setState(() {
-          _deviceMaxDuration = maxTime;
+          _applyReportedDeviceMaxTime(isLeftDevice, maxTime);
 
           if (isLeftDevice) {
             _leftIsRunning = true;
@@ -711,10 +725,15 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         });
       } else {
         // Both 会话已标记开始，或正在顺序启动：只更新状态，不要抢切到 left/right
-        if (_selectedPump == PumpSelection.both &&
-            (_bothStartInProgress || _leftHasStarted || _rightHasStarted)) {
+        if (ControlNavigationResumeLogic.shouldSafeUpdateBothMode(
+          selectedPump: _selectedPump,
+          bothStartInProgress: _bothStartInProgress,
+          leftHasStarted: _leftHasStarted,
+          rightHasStarted: _rightHasStarted,
+          sessionStartedAsBoth: _sessionStartedAsBoth,
+        )) {
           setState(() {
-            _deviceMaxDuration = maxTime;
+            _applyReportedDeviceMaxTime(isLeftDevice, maxTime);
             if (isLeftDevice) {
               _leftIsRunning = true;
               _leftIntensityMode = intensityMode;
@@ -742,7 +761,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         //   '⚠️ 设备手动启动: $deviceSide设备正在运行，但app未在运行状态，需要调整',
         // );
         setState(() {
-          _deviceMaxDuration = maxTime;
+          _applyReportedDeviceMaxTime(isLeftDevice, maxTime);
 
           if (isLeftDevice) {
             _leftIsRunning = true;
@@ -801,7 +820,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     } else if (isRunning == 2) {
       // debugPrint('⚠️ 设备已暂停: $deviceSide设备，保持当前状态');
       setState(() {
-        _deviceMaxDuration = maxTime;
+            _applyReportedDeviceMaxTime(isLeftDevice, maxTime);
 
         if (isLeftDevice) {
           _leftIsRunning = false;
@@ -1304,7 +1323,11 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
               _rightIsRunning &&
               ControlDbRefreshKickLogic.shouldKickOnDbOffline(
                 elapsedSeconds: leftEffectiveElapsed,
-                deviceMaxDuration: _deviceMaxDuration,
+                deviceMaxDuration: ControlDeviceMaxDurationLogic.sideDeviceMaxDuration(
+                  isLeft: true,
+                  left: _leftDeviceMaxDuration,
+                  right: _rightDeviceMaxDuration,
+                ),
                 uiMaxDuration: _maxDuration,
               )) {
             debugPrint(
@@ -1355,7 +1378,11 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
               _leftIsRunning &&
               ControlDbRefreshKickLogic.shouldKickOnDbOffline(
                 elapsedSeconds: rightEffectiveElapsed,
-                deviceMaxDuration: _deviceMaxDuration,
+                deviceMaxDuration: ControlDeviceMaxDurationLogic.sideDeviceMaxDuration(
+                  isLeft: false,
+                  left: _leftDeviceMaxDuration,
+                  right: _rightDeviceMaxDuration,
+                ),
                 uiMaxDuration: _maxDuration,
               )) {
             debugPrint(
@@ -1577,9 +1604,9 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {
       _maxDuration = value;
-      _pumpMaxDurations[PumpSelection.left] = value;
-      _pumpMaxDurations[PumpSelection.right] = value;
-      _pumpMaxDurations[PumpSelection.both] = value;
+      _pumpMaxDurations.addAll(
+        ControlSessionSettingsSyncLogic.snapshotToAll(value),
+      );
     });
   }
 
@@ -2197,6 +2224,49 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     }
   }
 
+  void _applyReportedDeviceMaxTime(bool isLeftDevice, int maxTime) {
+    final next = ControlDeviceMaxDurationLogic.applyReportedMaxTime(
+      isLeftDevice: isLeftDevice,
+      maxTime: maxTime,
+      left: _leftDeviceMaxDuration,
+      right: _rightDeviceMaxDuration,
+    );
+    _leftDeviceMaxDuration = next.left;
+    _rightDeviceMaxDuration = next.right;
+  }
+
+  void _clearDeviceMaxTimeOnStop({
+    required bool isLeftDevice,
+    required bool otherSideRunning,
+  }) {
+    final next = ControlDeviceMaxDurationLogic.clearOnStop(
+      isLeftDevice: isLeftDevice,
+      otherSideRunning: otherSideRunning,
+      left: _leftDeviceMaxDuration,
+      right: _rightDeviceMaxDuration,
+    );
+    _leftDeviceMaxDuration = next.left;
+    _rightDeviceMaxDuration = next.right;
+  }
+
+  int? _displayDeviceMaxDuration() {
+    return ControlDeviceMaxDurationLogic.displayDeviceMaxDuration(
+      selected: _selectedPump,
+      left: _leftDeviceMaxDuration,
+      right: _rightDeviceMaxDuration,
+    );
+  }
+
+  void _maybeClearSessionStartedAsBoth({required bool isSessionEndCleanup}) {
+    if (ControlNavigationResumeLogic.shouldClearSessionStartedAsBoth(
+      leftHasStarted: _leftHasStarted,
+      rightHasStarted: _rightHasStarted,
+      isSessionEndCleanup: isSessionEndCleanup,
+    )) {
+      _sessionStartedAsBoth = false;
+    }
+  }
+
   void _recordPendingOperation(ConnectedDevice? device, int expectedIsRunning) {
     if (device == null || device.devId == null) {
       debugPrint('⚠️ 无法记录待确认操作: 设备为空或 devId 为空');
@@ -2263,15 +2333,27 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     final oldSelection = _selectedPump;
     final targetSelection = newSelection ?? _selectedPump;
     
-    // 如果提供了新的选择，先保存旧选择的状态（SessionMode 和 Max Duration）
+    // Persist in-memory UI settings to every selection before swapping.
+    // Writing only the old selection left left/right at factory defaults.
     if (newSelection != null && oldSelection != newSelection) {
-      _pumpSessionModes[oldSelection] = _sessionMode;
-      _pumpMaxDurations[oldSelection] = _maxDuration;
+      _pumpSessionModes.addAll(
+        ControlSessionSettingsSyncLogic.snapshotToAll(_sessionMode),
+      );
+      _pumpMaxDurations.addAll(
+        ControlSessionSettingsSyncLogic.snapshotToAll(_maxDuration),
+      );
     }
 
-    // 恢复目标选择的状态
-    _sessionMode = _pumpSessionModes[targetSelection] ?? SessionMode.defaultMode;
-    _maxDuration = _pumpMaxDurations[targetSelection] ?? 20;
+    _sessionMode = ControlSessionSettingsSyncLogic.restore(
+      _pumpSessionModes,
+      targetSelection,
+      SessionMode.defaultMode,
+    );
+    _maxDuration = ControlSessionSettingsSyncLogic.restore(
+      _pumpMaxDurations,
+      targetSelection,
+      ControlSessionSettingsSyncLogic.defaultMaxDuration,
+    );
 
     // 同步时间相关的显示变量
     switch (targetSelection) {
@@ -2322,17 +2404,30 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       leftHasStarted: _leftHasStarted,
       rightHasStarted: _rightHasStarted,
       singleSideHasStarted: _getCurrentHasStarted(),
+      bothStartInProgress: _bothStartInProgress,
     );
   }
 
   /// 将主展示时间同步为左侧设备时间（仅在 both 非独立模式生效）。
   void _syncBothDisplayFromLeft() {
     if (!_shouldShowBothUsingLeft()) return;
-    _elapsedTime = _leftElapsedTime;
-    _elapsedTimeInPhase = _leftElapsedTimeInPhase;
-    _currentPhase = _leftCurrentPhase;
-    _totalPhase = _leftTotalPhase;
-    _phaseDuration = _leftPhaseDuration;
+    final useLeft = ControlTimerDisplayLogic.useLeftTimeForBothDisplay(
+      leftHasStarted: _leftHasStarted,
+      rightHasStarted: _rightHasStarted,
+    );
+    if (useLeft) {
+      _elapsedTime = _leftElapsedTime;
+      _elapsedTimeInPhase = _leftElapsedTimeInPhase;
+      _currentPhase = _leftCurrentPhase;
+      _totalPhase = _leftTotalPhase;
+      _phaseDuration = _leftPhaseDuration;
+    } else {
+      _elapsedTime = _rightElapsedTime;
+      _elapsedTimeInPhase = _rightElapsedTimeInPhase;
+      _currentPhase = _rightCurrentPhase;
+      _totalPhase = _rightTotalPhase;
+      _phaseDuration = _rightPhaseDuration;
+    }
   }
 
   /// Timer card shows hybrid whenever the hybrid switch is on, matching DP/session
@@ -3097,11 +3192,11 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                         if (newValue != null) {
                           setState(() {
                             _maxDuration = newValue;
-                            // 同步写入所有 selection，防止 _syncDisplayVariables
-                            // 切换（如 individual mode）时读到未更新的旧默认值
-                            _pumpMaxDurations[PumpSelection.left] = newValue;
-                            _pumpMaxDurations[PumpSelection.right] = newValue;
-                            _pumpMaxDurations[PumpSelection.both] = newValue;
+                            _pumpMaxDurations.addAll(
+                              ControlSessionSettingsSyncLogic.snapshotToAll(
+                                newValue,
+                              ),
+                            );
                           });
                           _persistMaxDuration(newValue);
                         }
@@ -3135,8 +3230,9 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         } else {
           setState(() {
             _sessionMode = mode;
-            // 保存到当前泵选择对应的状态
-            _pumpSessionModes[_selectedPump] = mode;
+            _pumpSessionModes.addAll(
+              ControlSessionSettingsSyncLogic.snapshotToAll(mode),
+            );
           });
         }
       },
@@ -3229,7 +3325,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       effectivePhaseDuration: effectivePhaseDuration,
       elapsedTimeInPhase: _elapsedTimeInPhase,
       maxDuration: _maxDuration,
-      deviceMaxDuration: _deviceMaxDuration,
+      deviceMaxDuration: _displayDeviceMaxDuration(),
       showHybridDisplay: _shouldShowHybridTimerDisplay(),
     );
   }
@@ -3875,6 +3971,12 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             // 切换到左侧模式，并同步显示变量
             // 注意：在同步之前，确保两侧设备的时间变量都已经正确更新
             // _syncDisplayVariables 会从 _leftElapsedTime 和 _rightElapsedTime 复制到显示变量
+            _pumpSessionModes.addAll(
+              ControlSessionSettingsSyncLogic.snapshotToAll(_sessionMode),
+            );
+            _pumpMaxDurations.addAll(
+              ControlSessionSettingsSyncLogic.snapshotToAll(_maxDuration),
+            );
             _syncDisplayVariables(PumpSelection.left);
             _selectedPump = PumpSelection.left;
           });
@@ -4136,6 +4238,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                           if (_selectedPump == PumpSelection.both) {
                             setState(() {
                               _bothStartInProgress = true;
+                              _sessionStartedAsBoth = true;
                               _setCurrentHasStarted(true);
                               _resetCurrentElapsedTime();
                             });
@@ -4298,6 +4401,9 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                         setState(() {
                           _setCurrentIsRunning(false);
                           _setCurrentHasStarted(false);
+                          _maybeClearSessionStartedAsBoth(
+                            isSessionEndCleanup: true,
+                          );
                         });
                         _recordPendingForDevices(0);
                         _publishDpToDevices(DpConstants.stop, true);
