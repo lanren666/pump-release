@@ -2890,35 +2890,8 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       );
     }
 
-    if (coldStartInProgress ||
-        _reconnectingDeviceIds.contains(device.bluetoothId)) {
-      return _buildStatusCardShell(
-        backgroundColor: _statusDisconnectedBackground,
-        borderColor: const Color.fromRGBO(0, 0, 0, 0.08),
-        child: Row(
-          children: [
-            SizedBox(
-              width: ResponsiveText.getSize(context, 14),
-              height: ResponsiveText.getSize(context, 14),
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppColor.primaryPurple,
-              ),
-            ),
-            SizedBox(width: ResponsiveText.getSize(context, 6)),
-            Text(
-              '$sideLabel: ${l10n.connecting}',
-              style: ResponsiveText.bodySmall(
-                context,
-                fontWeight: FontWeight.bold,
-                color: AppColor.primaryPurple,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
+    // Connected / live session wins over a stuck local "reconnecting" spinner.
+    // Native connectBleDevices can hang after Tuya already came back.
     if (device.isRunning) {
       return _buildStatusCardShell(
         backgroundColor: _statusConnectedBackground,
@@ -2933,12 +2906,15 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                 color: _statusConnectedText,
               ),
             ),
-            Text(
-              l10n.deviceConnected,
-              style: ResponsiveText.bodySmall(
-                context,
-                fontWeight: FontWeight.bold,
-                color: _statusConnectedText,
+            Flexible(
+              child: Text(
+                l10n.deviceConnected,
+                overflow: TextOverflow.ellipsis,
+                style: ResponsiveText.bodySmall(
+                  context,
+                  fontWeight: FontWeight.bold,
+                  color: _statusConnectedText,
+                ),
               ),
             ),
             SizedBox(width: ResponsiveText.getSize(context, 8)),
@@ -2948,7 +2924,8 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       );
     }
 
-    final isReconnecting = _reconnectingDeviceIds.contains(device.bluetoothId);
+    final isReconnecting = coldStartInProgress ||
+        _reconnectingDeviceIds.contains(device.bluetoothId);
     final card = _buildStatusCardShell(
       backgroundColor: _statusDisconnectedBackground,
       borderColor: const Color.fromRGBO(0, 0, 0, 0.08),

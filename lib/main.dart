@@ -162,7 +162,7 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
 
   void _startPeriodicTask() {
     _periodicTimer?.cancel();
-    _periodicTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+    _periodicTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       _executePeriodicTask();
     });
   }
@@ -414,15 +414,11 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
               }
 
               if (isColdStartPass) {
-                OfflineStreakTracker.reset(device.bluetoothId);
+                // Probe can be a false offline while BLE is still coming up.
+                // Queue reconnect but keep isRunning so the UI does not flicker off.
                 debugPrint(
-                  '冷启动纠正 stale isRunning: devId=${device.devId}, '
+                  '冷启动探测离线，保持 isRunning 并重连: devId=${device.devId}, '
                   'bluetoothId=${device.bluetoothId}',
-                );
-                await _updateDeviceRunningStatus(
-                  device.devId!,
-                  false,
-                  source: 'cold_start_stale_offline',
                 );
                 shouldReconnect = true;
               } else {
@@ -464,7 +460,8 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
         }
 
         debugPrint(
-          '发现未运行的设备，待重连: ${device.name} (devId: ${device.devId}, bluetoothId: ${device.bluetoothId})',
+          '${device.isRunning ? "运行中设备待重连" : "发现未运行的设备，待重连"}: '
+          '${device.name} (devId: ${device.devId}, bluetoothId: ${device.bluetoothId})',
         );
 
         if (DeviceReconnectPolicy.shouldHealRunningFromDp(
@@ -577,12 +574,19 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
 
     switch (state) {
       case AppLifecycleState.resumed:
-        // 先对「已连接且在线」的设备重新注册监听，避免后台监听被系统杀掉导致回前台无数据
+        // Re-register listeners for devices that are already running.
         _onForegroundResumeListenerInit();
-        // 重置任务状态，防止异常情况下卡住
-        _isTaskRunning = false;
-        _taskStartTime = null;
+        // Do not clear an in-flight reconnect; only unblock a stuck task.
+        if (_isTaskRunning &&
+            _taskStartTime != null &&
+            DateTime.now().difference(_taskStartTime!).inSeconds > 30) {
+          _isTaskRunning = false;
+          _taskStartTime = null;
+        }
         _startPeriodicTask();
+        if (!_isTaskRunning) {
+          unawaited(_executePeriodicTask());
+        }
         debugPrint('应用进入前台，恢复周期性任务');
         break;
       case AppLifecycleState.paused:

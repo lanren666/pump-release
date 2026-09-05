@@ -24,6 +24,14 @@ class DpAliveTracker {
     return DateTime.now().difference(lastAt) <= aliveWindow;
   }
 
+  /// Seconds since the last DP105 touch, or null if this device never reported.
+  static int? secondsSinceLast(String devId) {
+    if (devId.isEmpty) return null;
+    final lastAt = _lastAtByDevId[devId];
+    if (lastAt == null) return null;
+    return DateTime.now().difference(lastAt).inSeconds;
+  }
+
   /// Visible for tests only.
   static void setLastAtForTest(String devId, DateTime at) {
     if (devId.isEmpty) return;
@@ -80,8 +88,8 @@ class OfflineStreakTracker {
   /// Consecutive offline probes required before treating device as offline.
   static const int confirmThreshold = 2;
 
-  /// First app launch pass skips debounce so stale DB `isRunning` is corrected
-  /// immediately and parallel reconnect can start without ~6s delay.
+  /// First app launch pass queues reconnect without waiting for offline debounce.
+  /// It does not write `isRunning=false` from a single probe.
   static bool coldStartPassActive = true;
 
   /// Drives UI rebuild when cold-start BLE verification finishes.

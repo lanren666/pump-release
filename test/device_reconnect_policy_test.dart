@@ -204,8 +204,10 @@ void main() {
     test('touch marks devId as recently alive', () {
       const devId = 'dev-3';
       expect(DpAliveTracker.isRecentlyAlive(devId), isFalse);
+      expect(DpAliveTracker.secondsSinceLast(devId), isNull);
       DpAliveTracker.touch(devId);
       expect(DpAliveTracker.isRecentlyAlive(devId), isTrue);
+      expect(DpAliveTracker.secondsSinceLast(devId), 0);
       expect(
         DeviceReconnectPolicy.shouldHealRunningFromDp(devId: devId),
         isTrue,

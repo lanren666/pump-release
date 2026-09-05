@@ -1177,7 +1177,7 @@ class MainActivity : FlutterActivity(), LocationListener {
             val bleConnectBuilder = BleConnectBuilder()
             bleConnectBuilder.setDevId(devId)
             bleConnectBuilder.setDirectConnect(true)
-//            bleConnectBuilder.setLevel(BleConnectBuilder.Level.FORCE)
+            bleConnectBuilder.setLevel(BleConnectBuilder.Level.FORCE)
             builderList.add(bleConnectBuilder)
 
             // 在发起连接前注册监听，确保固件连接后立即推送的 DP（如 104 电量）不会丢失
@@ -1205,10 +1205,10 @@ class MainActivity : FlutterActivity(), LocationListener {
                     )
                     result.success(resultData)
                 } else {
-                    android.util.Log.w("MainActivity", "⚠️ 设备连接可能失败: devId=$devId")
-                    // 仍然返回成功，让 EventChannel 处理状态更新，但包含devId
+                    android.util.Log.w("MainActivity", "⚠️ 设备连接失败: devId=$devId")
+                    updateConnectionState(deviceId, "disconnected")
                     val resultData = mapOf(
-                        "success" to true,
+                        "success" to false,
                         "devId" to devId
                     )
                     result.success(resultData)
@@ -1358,6 +1358,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                     val bleConnectBuilder = BleConnectBuilder()
                     bleConnectBuilder.setDevId(devId)
                     bleConnectBuilder.setDirectConnect(true)
+                    bleConnectBuilder.setLevel(BleConnectBuilder.Level.FORCE)
                     builderList.add(bleConnectBuilder)
                     // 在发起连接前注册监听，确保固件连接后立即推送的 DP 不会丢失
                     // 仅对已解析出的 devId 注册（排除解析失败时回退使用 bluetoothId 的情况）
