@@ -1,0 +1,47 @@
+name: Restore OSS latest
+
+on:
+  workflow_dispatch:
+    inputs:
+      archive:
+        description: Dated latest object to restore (default today's test archive)
+        type: string
+        required: false
+        default: SporraMom-latest_20260905.apk
+
+env:
+  OSS_ENDPOINT: oss-cn-shenzhen.aliyuncs.com
+  OSS_BUCKET: sporra-mom
+
+jobs:
+  restore:
+    name: Restore latest APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download ossutil
+        run: |
+          curl -L https://gosspublic.alicdn.com/ossutil/1.7.16/ossutil64 -o ossutil64
+          chmod +x ossutil64
+
+      - name: Configure ossutil
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+        run: |
+          set -euo pipefail
+          ./ossutil64 config -e "$OSS_ENDPOINT" -i "$ALIYUN_ACCESS_KEY_ID" -k "$ALIYUN_ACCESS_KEY_SECRET"
+
+      - name: Restore SporraMom-latest.apk
+        env:
+          ARCHIVE_NAME: ${{ inputs.archive }}
+        run: |
+          set -euo pipefail
+          archive="oss://${OSS_BUCKET}/latest/${ARCHIVE_NAME}"
+          latest="oss://${OSS_BUCKET}/latest/SporraMom-latest.apk"
+          ./ossutil64 stat "${archive}"
+          ./ossutil64 cp "${archive}" "${latest}" --force --acl public-read
+          ./ossutil64 set-acl "${latest}" public-read -f
+          echo "Restored ${archive} -> ${latest}"
+          ./ossutil64 ls "oss://${OSS_BUCKET}/latest/"
+          ./ossutil64 stat "${latest}"
