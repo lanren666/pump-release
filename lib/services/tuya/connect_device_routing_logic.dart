@@ -7,8 +7,9 @@
 /// out (MSG_CONN_ERROR_CONNECT_TIMEOUT / 205105).
 ///
 /// This logic is extracted so it can be unit-tested without platform channels.
-/// The native implementations (AppDelegate.swift, MainActivity.kt) mirror this
-/// decision using the `devId` arg passed from Dart.
+/// iOS AppDelegate mirrors this `isActive` + known-devId decision.
+/// Android MainActivity uses AndroidConnectRoutingLogic (isbind + home lookup)
+/// so it never calls connectBleDevice with an empty devId.
 enum ConnectRoute { activate, directConnect }
 
 class ConnectDeviceRoutingLogic {
