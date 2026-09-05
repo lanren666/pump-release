@@ -164,10 +164,24 @@ jobs:
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
+        id: setup-ndk
         with:
           ndk-version: r27
           link-to-sdk: true
-          local-cache: true
+
+      - name: Export NDK for Gradle
+        run: |
+          set -euo pipefail
+          ndk="${{ steps.setup-ndk.outputs.ndk-path }}"
+          clang="$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          if [ ! -x "$clang" ]; then
+            echo "NDK clang missing at $clang" >&2
+            ls -la "$ndk/toolchains/llvm/prebuilt" >&2 || true
+            exit 1
+          fi
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ndk" >> "$GITHUB_ENV"
+          echo "Using NDK $ndk"
 
       - name: Restore Android signing
         env:
