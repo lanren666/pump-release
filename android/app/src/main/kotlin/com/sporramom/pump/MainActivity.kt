@@ -71,10 +71,128 @@ class MainActivity : FlutterActivity(), LocationListener {
     // 已注册 DP 监听器的 IThingDevice 实例（devId -> instance）
     // 每次重新注册前先对旧实例调用 unRegisterDevListener，防止 listener 无限堆叠
     private val registeredDeviceListeners = mutableMapOf<String, IThingDevice>()
+    private val connectOnlineWaiters = mutableMapOf<String, MutableList<(Boolean) -> Unit>>()
 
     // Filter: adb logcat -s BLE_REPRO
     private fun reproLog(msg: String) {
         android.util.Log.i("BLE_REPRO", msg)
+    }
+
+    /// Official ScanDeviceBean.isbind; fall back to isActive on older artifacts.
+    private fun scanIsBound(bean: ScanDeviceBean): Boolean {
+        return try {
+            val bindMethod = bean.javaClass.methods.firstOrNull { method ->
+                method.parameterCount == 0 &&
+                    (method.name.equals("isbind", ignoreCase = true) ||
+                        method.name == "isBind" ||
+                        method.name == "getIsbind" ||
+                        method.name == "isIsbind")
+            }
+            val bound = bindMethod?.invoke(bean) as? Boolean
+            if (bound != null) return bound
+            val field = bean.javaClass.declaredFields.firstOrNull { candidate ->
+                candidate.name.equals("isbind", ignoreCase = true) ||
+                    candidate.name == "isBind"
+            }
+            if (field != null) {
+                field.isAccessible = true
+                return field.getBoolean(bean)
+            }
+            val isActiveField = bean.javaClass.getDeclaredField("isActive")
+            isActiveField.isAccessible = true
+            isActiveField.getBoolean(bean)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun notifyConnectOnline(devId: String, online: Boolean) {
+        if (devId.isEmpty() || !online) return
+        val waiters = connectOnlineWaiters.remove(devId) ?: return
+        waiters.forEach { it.invoke(true) }
+    }
+
+    private fun observeBleOnline(
+        devId: String,
+        timeoutMs: Long,
+        done: (Boolean) -> Unit,
+    ) {
+        // MethodChannel.Result must be replied on the main thread.
+        val complete: (Boolean) -> Unit = { online ->
+            mainHandler.post { done(online) }
+        }
+        if (devId.isNotEmpty() && ThingHomeSdk.getBleManager().isBleLocalOnline(devId)) {
+            complete(true)
+            return
+        }
+        var finished = false
+        val finish: (Boolean) -> Unit = { online ->
+            if (!finished) {
+                finished = true
+                connectOnlineWaiters.remove(devId)
+                complete(online)
+            }
+        }
+        if (devId.isNotEmpty()) {
+            connectOnlineWaiters.getOrPut(devId) { mutableListOf() }.add(finish)
+        }
+        mainHandler.postDelayed({
+            val online =
+                devId.isNotEmpty() && ThingHomeSdk.getBleManager().isBleLocalOnline(devId)
+            finish(online)
+        }, timeoutMs)
+    }
+
+    private fun resolvePreferredHomeId(explicit: Long?, onDone: (Long?) -> Unit) {
+        if (explicit != null) {
+            onDone(explicit)
+            return
+        }
+        ThingHomeSdk.getHomeManagerInstance().queryHomeList(
+            object : IThingGetHomeListCallback {
+                override fun onSuccess(homeBeans: List<HomeBean>) {
+                    onDone(homeBeans.firstOrNull()?.homeId)
+                }
+
+                override fun onError(errorCode: String, error: String) {
+                    android.util.Log.e("MainActivity", "获取家庭列表失败: $error")
+                    onDone(null)
+                }
+            }
+        )
+    }
+
+    private fun findDevIdInHome(homeId: Long, uuid: String, onDone: (String?) -> Unit) {
+        ThingHomeSdk.newHomeInstance(homeId).getHomeDetail(
+            object : IThingHomeResultCallback {
+                override fun onSuccess(bean: HomeBean) {
+                    val found = bean.deviceList?.firstOrNull { it.uuid == uuid }?.devId
+                    onDone(found?.takeIf { it.isNotEmpty() })
+                }
+
+                override fun onError(errorCode: String, errorMsg: String) {
+                    android.util.Log.e("MainActivity", "获取家庭详情失败: $errorMsg")
+                    onDone(null)
+                }
+            }
+        )
+    }
+
+    private fun ensureHomeCache(then: () -> Unit) {
+        ThingHomeSdk.getHomeManagerInstance().queryHomeList(
+            object : IThingGetHomeListCallback {
+                override fun onSuccess(homeBeans: List<HomeBean>) {
+                    if (homeBeans.isEmpty()) {
+                        then()
+                        return
+                    }
+                    // Official getDataInstance cache stays empty until getHomeDetail.
+                    collectDevicesFromHomes(homeBeans, 0, mutableListOf()) { then() }
+                }
+
+                override fun onError(errorCode: String, error: String) = then()
+            }
+        )
     }
 
     private fun hasBluetoothPermissions(): Boolean {
@@ -760,17 +878,18 @@ class MainActivity : FlutterActivity(), LocationListener {
         // Non-empty means "already paired" — skip isActive reflection and getHomeDetail entirely.
         val dartDevId = (args?.get("devId") as? String)?.takeIf { it.isNotEmpty() }
 
-        if (deviceId == null || uuid == null || productKey == null) {
-            result.error("INVALID_ARGUMENT", "deviceId, uuid, and productKey are required", null)
+        if (deviceId == null || uuid == null) {
+            result.error("INVALID_ARGUMENT", "deviceId and uuid are required", null)
             return
         }
+        val safeProductKey = productKey ?: ""
 
         android.util.Log.d(
             "MainActivity",
-            "🔗 开始连接设备: $deviceId, uuid: $uuid, productKey: $productKey, dartDevId: $dartDevId"
+            "🔗 开始连接设备: $deviceId, uuid: $uuid, productKey: $safeProductKey, dartDevId: $dartDevId"
         )
         reproLog(
-            "connectDevice enter deviceId=$deviceId uuid=$uuid pk=$productKey " +
+            "connectDevice enter deviceId=$deviceId uuid=$uuid pk=$safeProductKey " +
                 "dartDevId=${dartDevId ?: "(empty)"} homeId=$homeId " +
                 "inScanCache=${scannedDevices.containsKey(uuid)}"
         )
@@ -780,85 +899,56 @@ class MainActivity : FlutterActivity(), LocationListener {
         if (dartDevId != null) {
             android.util.Log.d("MainActivity", "✅ 使用 Dart 传入的 devId 直接连接: $dartDevId")
             reproLog("connectDevice route=DIRECT_DART_DEVID dartDevId=$dartDevId")
-            connectDeviceDirectly(dartDevId, deviceId, uuid, productKey, result)
+            connectDeviceDirectly(dartDevId, deviceId, uuid, safeProductKey, result, force = true)
             return
         }
 
-        // Device not yet paired: decide activation vs direct-connect via scan-cache isActive.
+        // Unbound scan result -> official startActivator. Bound/missing scan
+        // must resolve a real Tuya devId from getHomeDetail; never connect with "".
         val deviceInfo = scannedDevices[uuid]
-        val isActive = try {
-            val isActiveField = deviceInfo?.javaClass?.getDeclaredField("isActive")
-            isActiveField?.isAccessible = true
-            isActiveField?.getBoolean(deviceInfo) ?: false
-        } catch (e: Exception) {
-            false
+        val bound = deviceInfo?.let { scanIsBound(it) } ?: false
+        if (deviceInfo != null && !bound) {
+            android.util.Log.d("MainActivity", "📱 设备未绑定，需要先激活: $uuid")
+            reproLog("connectDevice route=ACTIVATE uuid=$uuid isbind=false hasScanBean=true")
+            activeDevice(deviceInfo, homeId, deviceId, uuid, safeProductKey, result)
+            return
         }
 
-        if (deviceInfo != null && !isActive) {
-            android.util.Log.d("MainActivity", "📱 设备未配网，需要先激活: $uuid")
-            reproLog("connectDevice route=ACTIVATE uuid=$uuid isActive=$isActive hasScanBean=true")
-            activeDevice(deviceInfo, homeId, deviceId, uuid, productKey, result)
-        } else {
-            android.util.Log.d("MainActivity", "✅ 设备已配网，直接连接: $uuid")
-            reproLog(
-                "connectDevice route=DIRECT_SCAN_OR_HOME uuid=$uuid isActive=$isActive " +
-                    "hasScanBean=${deviceInfo != null}"
-            )
-            // 设备已配网，尝试从home的设备列表中查找devId
-            val targetHomeId = homeId ?: run {
-                // 如果没有传入homeId，尝试从第一个家庭获取
-                var foundHomeId: Long? = null
-                ThingHomeSdk.getHomeManagerInstance().queryHomeList(
-                    object : IThingGetHomeListCallback {
-                        override fun onSuccess(homeBeans: List<HomeBean>) {
-                            if (homeBeans.isNotEmpty()) {
-                                foundHomeId = homeBeans[0].homeId
-                            }
-                        }
-                        override fun onError(errorCode: String, error: String) {
-                            android.util.Log.e("MainActivity", "获取家庭列表失败: $error")
-                        }
-                    }
-                )
-                foundHomeId
+        android.util.Log.d("MainActivity", "✅ 按已绑定路径查找 devId: $uuid")
+        reproLog(
+            "connectDevice route=HOME_LOOKUP uuid=$uuid isbind=$bound " +
+                "hasScanBean=${deviceInfo != null}"
+        )
+        resolvePreferredHomeId(homeId) { resolvedHomeId ->
+            if (resolvedHomeId == null) {
+                mainHandler.post {
+                    result.error("HOME_NOT_FOUND", "Home not found, please create a home first", null)
+                }
+                return@resolvePreferredHomeId
             }
-            
-            // 尝试从home的设备列表中查找devId
-            var foundDevId: String? = null
-            if (targetHomeId != null) {
-                ThingHomeSdk.newHomeInstance(targetHomeId).getHomeDetail(
-                    object : IThingHomeResultCallback {
-                        override fun onSuccess(bean: HomeBean) {
-                            val deviceList = bean.deviceList
-                            if (deviceList != null) {
-                                for (device in deviceList) {
-                                    // 通过uuid匹配设备
-                                    if (device.uuid == uuid) {
-                                        foundDevId = device.devId
-                                        android.util.Log.d("MainActivity", "从home设备列表找到devId: $foundDevId")
-                                        break
-                                    }
-                                }
-                            }
-                            // 连接设备（即使没找到devId也尝试连接）
-                            connectDeviceDirectly(
-                                foundDevId ?: "",
-                                deviceId,
-                                uuid,
-                                productKey,
-                                result
-                            )
-                        }
-                        override fun onError(errorCode: String, errorMsg: String) {
-                            android.util.Log.e("MainActivity", "获取家庭详情失败: $errorMsg")
-                            // 即使获取失败也尝试连接
-                            connectDeviceDirectly("", deviceId, uuid, productKey, result)
-                        }
-                    }
-                )
-            } else {
-                // 没有homeId，直接连接（devId为空）
-                connectDeviceDirectly("", deviceId, uuid, productKey, result)
+            findDevIdInHome(resolvedHomeId, uuid) { foundDevId ->
+                if (!foundDevId.isNullOrEmpty()) {
+                    connectDeviceDirectly(
+                        foundDevId,
+                        deviceId,
+                        uuid,
+                        safeProductKey,
+                        result,
+                        force = true,
+                    )
+                    return@findDevIdInHome
+                }
+                if (deviceInfo != null && !scanIsBound(deviceInfo)) {
+                    activeDevice(deviceInfo, resolvedHomeId, deviceId, uuid, safeProductKey, result)
+                    return@findDevIdInHome
+                }
+                mainHandler.post {
+                    result.error(
+                        "DEVICE_NOT_IN_HOME",
+                        "No Tuya devId for uuid=$uuid. Put the pump in pairing mode and search again.",
+                        mapOf("uuid" to uuid),
+                    )
+                }
             }
         }
     }
@@ -975,7 +1065,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                     }
 
                     // 激活成功后连接设备（连接成功后再注册监听器）
-                    connectDeviceDirectly(devId, deviceId, uuid, productKey, result)
+                    connectDeviceDirectly(devId, deviceId, uuid, productKey, result, force = true)
                 }
 
                 override fun onFailure(code: Int, msg: String, handle: Any?) {
@@ -1104,6 +1194,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                     "MainActivity",
                     "🔄 onStatusChanged - devId: $devId, online: $online"
                 )
+                notifyConnectOnline(devId, online)
 
                 // 通过 EventChannel 发送网络状态变化事件到 Flutter 端
                 val eventData = JSONObject().apply {
@@ -1144,6 +1235,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                     "MainActivity",
                     "🌐 onNetworkStatusChanged - devId: $devId, status: $status"
                 )
+                notifyConnectOnline(devId, status)
 
                 // 通过 EventChannel 发送网络状态变化事件到 Flutter 端
                 val eventData = JSONObject().apply {
@@ -1189,15 +1281,26 @@ class MainActivity : FlutterActivity(), LocationListener {
         deviceId: String,
         uuid: String,
         productKey: String,
-        result: MethodChannel.Result
+        result: MethodChannel.Result,
+        force: Boolean = false,
     ) {
+        if (devId.isEmpty()) {
+            result.error(
+                "MISSING_DEV_ID",
+                "Tuya devId is required for connectBleDevice",
+                mapOf("uuid" to uuid, "deviceId" to deviceId),
+            )
+            return
+        }
+
         android.util.Log.d("MainActivity", "🔗 开始连接设备: devId=$devId, deviceId=$deviceId")
+        val level = if (force) BleConnectBuilder.Level.FORCE else BleConnectBuilder.Level.NORMAL
         reproLog(
             "connectDirectly start devId=$devId deviceId=$deviceId uuid=$uuid " +
-                "directConnect=true force=FORCE waitMs=2000"
+                "directConnect=true force=$force waitMs=8000"
         )
 
-        // 在主线程中执行连接操作（官方要求）
+        // Official BLE connect must run on the main thread.
         mainHandler.post {
             updateConnectionState(deviceId, "connecting")
 
@@ -1205,45 +1308,43 @@ class MainActivity : FlutterActivity(), LocationListener {
             val bleConnectBuilder = BleConnectBuilder()
             bleConnectBuilder.setDevId(devId)
             bleConnectBuilder.setDirectConnect(true)
-            bleConnectBuilder.setLevel(BleConnectBuilder.Level.FORCE)
+            bleConnectBuilder.setLevel(level)
             builderList.add(bleConnectBuilder)
 
-            // 在发起连接前注册监听，确保固件连接后立即推送的 DP（如 104 电量）不会丢失
-            if (devId.isNotEmpty()) {
-                registerDeviceListener(devId)
-            }
-
+            // Register before connect so the first DP burst is not dropped.
+            registerDeviceListener(devId)
             ThingHomeSdk.getBleManager().connectBleDevice(builderList)
 
-            // 由于连接是异步的，我们需要通过监听连接状态来判断是否成功
-            // 这里先返回成功，实际状态通过 EventChannel 通知
-            mainHandler.postDelayed({
-                // 检查设备是否在线（使用 devId 检查连接状态）
-                val isOnline = ThingHomeSdk.getBleManager().isBleLocalOnline(devId)
+            observeBleOnline(devId, 8000) { isOnline ->
                 if (isOnline) {
                     android.util.Log.d("MainActivity", "✅ 设备连接成功: devId=$devId")
-                    reproLog("connectDirectly result isOnline=true success=true (real) devId=$devId")
+                    reproLog("connectDirectly result isOnline=true success=true devId=$devId")
                     updateConnectionState(deviceId, "connected")
-                    // 二次注册确保监听器与最新 IThingDevice 实例绑定（registerDeviceListener 内部会先 unRegister 旧实例）
                     registerDeviceListener(devId)
-                    
-                    // 返回包含devId的字典
-                    val resultData = mapOf(
-                        "success" to true,
-                        "devId" to devId
+                    result.success(
+                        mapOf(
+                            "success" to true,
+                            "pending" to false,
+                            "devId" to devId,
+                        )
                     )
-                    result.success(resultData)
                 } else {
-                    android.util.Log.w("MainActivity", "⚠️ 设备连接失败: devId=$devId")
-                    reproLog("connectDirectly result isOnline=false success=false devId=$devId")
-                    updateConnectionState(deviceId, "disconnected")
-                    val resultData = mapOf(
-                        "success" to false,
-                        "devId" to devId
+                    // Official connectBleDevice has no failure callback. A miss
+                    // after 8s is still-connecting, not a confirmed drop.
+                    android.util.Log.w(
+                        "MainActivity",
+                        "⚠️ 设备连接尚未确认在线: devId=$devId"
                     )
-                    result.success(resultData)
+                    reproLog("connectDirectly result isOnline=false pending=true devId=$devId")
+                    result.success(
+                        mapOf(
+                            "success" to false,
+                            "pending" to true,
+                            "devId" to devId,
+                        )
+                    )
                 }
-            }, 2000) // 等待2秒检查连接状态
+            }
         }
     }
 
@@ -1379,36 +1480,45 @@ class MainActivity : FlutterActivity(), LocationListener {
 
         val flutterIds = deviceIds.map { it.toString() }
         android.util.Log.d("MainActivity", "🔗 批量连接设备: $flutterIds")
-        reproLog("connectBleDevices enter ids=$flutterIds directConnect=true force=FORCE waitMs=3000")
+        reproLog("connectBleDevices enter ids=$flutterIds directConnect=true force=NORMAL waitMs=8000")
 
         resolveDevIds(flutterIds) { resolvedMap ->
             mainHandler.post {
                 reproLog("connectBleDevices resolved=$resolvedMap")
                 val builderList = mutableListOf<BleConnectBuilder>()
+                val connectIds = mutableListOf<Pair<String, String>>()
                 for (flutterId in flutterIds) {
                     val devId = resolvedMap[flutterId] ?: flutterId
+                    if (devId.isEmpty()) {
+                        continue
+                    }
                     updateConnectionState(flutterId, "connecting")
                     val bleConnectBuilder = BleConnectBuilder()
                     bleConnectBuilder.setDevId(devId)
                     bleConnectBuilder.setDirectConnect(true)
-                    bleConnectBuilder.setLevel(BleConnectBuilder.Level.FORCE)
+                    // Periodic dual-pump reconnect must not FORCE-evict the other side.
+                    bleConnectBuilder.setLevel(BleConnectBuilder.Level.NORMAL)
                     builderList.add(bleConnectBuilder)
-                    // 在发起连接前注册监听，确保固件连接后立即推送的 DP 不会丢失
-                    // 仅对已解析出的 devId 注册（排除解析失败时回退使用 bluetoothId 的情况）
-                    val resolvedDevId = resolvedMap[flutterId]
-                    if (!resolvedDevId.isNullOrEmpty()) {
-                        registerDeviceListener(resolvedDevId)
+                    connectIds.add(flutterId to devId)
+                    if (devId.isNotEmpty()) {
+                        registerDeviceListener(devId)
                     }
+                }
+
+                if (builderList.isEmpty()) {
+                    result.success(emptyMap<String, Boolean>())
+                    return@post
                 }
 
                 ThingHomeSdk.getBleManager().connectBleDevice(builderList)
 
-                mainHandler.postDelayed({
+                var batchFinished = false
+                fun finishBatch() {
+                    if (batchFinished) return
+                    batchFinished = true
                     val connectionResults = mutableMapOf<String, Boolean>()
-                    for (flutterId in flutterIds) {
-                        val devId = resolvedMap[flutterId] ?: flutterId
-                        val isOnline =
-                            ThingHomeSdk.getBleManager().isBleLocalOnline(devId)
+                    for ((flutterId, devId) in connectIds) {
+                        val isOnline = ThingHomeSdk.getBleManager().isBleLocalOnline(devId)
                         connectionResults[flutterId] = isOnline
                         if (isOnline) {
                             android.util.Log.d(
@@ -1421,14 +1531,27 @@ class MainActivity : FlutterActivity(), LocationListener {
                         } else {
                             android.util.Log.w(
                                 "MainActivity",
-                                "⚠️ 设备连接失败: flutterId=$flutterId devId=$devId"
+                                "⚠️ 批量重连尚未确认在线: flutterId=$flutterId devId=$devId"
                             )
-                            reproLog("connectBleDevices result flutterId=$flutterId devId=$devId isOnline=false")
-                            updateConnectionState(flutterId, "disconnected")
+                            reproLog("connectBleDevices result flutterId=$flutterId devId=$devId isOnline=false pending")
                         }
                     }
                     result.success(connectionResults)
-                }, 3000)
+                }
+
+                var remaining = connectIds.size
+                if (remaining == 0) {
+                    finishBatch()
+                    return@post
+                }
+                connectIds.forEach { (_, devId) ->
+                    observeBleOnline(devId, 8000) {
+                        remaining -= 1
+                        if (remaining <= 0) {
+                            finishBatch()
+                        }
+                    }
+                }
             }
         }
     }
@@ -1767,6 +1890,7 @@ class MainActivity : FlutterActivity(), LocationListener {
             return
         }
 
+        ensureHomeCache {
         // 使用 getDp 方法获取单个 DP 的值
         device.getDp(dpId, object : IResultCallback {
             override fun onError(errorCode: String?, errorMsg: String?) {
@@ -1787,38 +1911,44 @@ class MainActivity : FlutterActivity(), LocationListener {
             }
 
             override fun onSuccess() {
-                // getDp 成功后，需要从 getDps 获取实际值
-                // 因为 getDp 的回调不返回具体值，我们需要通过 getDps 来获取
-                try {
-                    val allDps: Map<String, Any>? = ThingHomeSdk.getDataInstance().getDps(deviceId)
-                    if (allDps != null && allDps.containsKey(dpId)) {
-                        val dpValue = allDps[dpId]
-                        android.util.Log.d(
-                            "MainActivity",
-                            "✅ 成功获取 DP[$dpId] = $dpValue (类型: ${dpValue?.javaClass?.simpleName})"
-                        )
-                        result.success(mapOf(
-                            "dpId" to dpId,
-                            "value" to dpValue
-                        ))
-                    } else {
-                        android.util.Log.w("MainActivity", "⚠️ DP[$dpId] 不存在或值为空")
+                fun replyFromCache() {
+                    try {
+                        val allDps: Map<String, Any>? =
+                            ThingHomeSdk.getDataInstance().getDps(deviceId)
+                        if (allDps != null && allDps.containsKey(dpId)) {
+                            val dpValue = allDps[dpId]
+                            android.util.Log.d(
+                                "MainActivity",
+                                "✅ 成功获取 DP[$dpId] = $dpValue (类型: ${dpValue?.javaClass?.simpleName})"
+                            )
+                            result.success(
+                                mapOf(
+                                    "dpId" to dpId,
+                                    "value" to dpValue
+                                )
+                            )
+                        } else {
+                            android.util.Log.w("MainActivity", "⚠️ DP[$dpId] 不存在或值为空")
+                            result.error(
+                                "DP_NOT_FOUND",
+                                "DP not found or value is null",
+                                mapOf("deviceId" to deviceId, "dpId" to dpId)
+                            )
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("MainActivity", "❌ 获取 DP 值失败: ${e.message}")
                         result.error(
-                            "DP_NOT_FOUND",
-                            "DP not found or value is null",
-                            mapOf("deviceId" to deviceId, "dpId" to dpId)
+                            "GET_DP_VALUE_FAILED",
+                            "Failed to get DP value: ${e.message}",
+                            null
                         )
                     }
-                } catch (e: Exception) {
-                    android.util.Log.e("MainActivity", "❌ 获取 DP 值失败: ${e.message}")
-                    result.error(
-                        "GET_DP_VALUE_FAILED",
-                        "Failed to get DP value: ${e.message}",
-                        null
-                    )
                 }
+
+                replyFromCache()
             }
         })
+        }
     }
 
     private fun processStartScan(result: MethodChannel.Result) {
@@ -1866,7 +1996,7 @@ class MainActivity : FlutterActivity(), LocationListener {
 
         try {
             val scanSetting = LeScanSetting.Builder()
-                .setTimeout(10000)
+                .setTimeout(40000)
                 .addScanType(ScanType.SINGLE)
                 .build()
 
@@ -1889,21 +2019,19 @@ class MainActivity : FlutterActivity(), LocationListener {
 
                     mainHandler.post {
                         try {
-                            val isActive = try {
-                                val isActiveField = bean.javaClass.getDeclaredField("isActive")
-                                isActiveField.isAccessible = true
-                                isActiveField.getBoolean(bean)
-                            } catch (e: Exception) {
-                                false
-                            }
+                            val bound = scanIsBound(bean)
+                            val productId = bean.productId ?: ""
                             val deviceInfo = JSONObject().apply {
                                 put("id", bean.id ?: "")
                                 put("name", bean.name ?: "")
                                 put("uuid", bean.uuid ?: "")
                                 put("devId", "")
-                                put("providerName", bean.providerName ?: "")
+                                put("productId", productId)
+                                // Old Dart read providerName as productKey; send productId there.
+                                put("providerName", productId.ifEmpty { bean.providerName ?: "" })
                                 put("rssi", bean.rssi)
-                                put("isActive", isActive)
+                                put("isbind", bound)
+                                put("isActive", bound)
                                 // 尝试获取 isProuductKey 属性
                                 val isProuductKey = try {
                                     val isProuductKeyField =
@@ -1921,7 +2049,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                             }
                             reproLog(
                                 "scan hit id=${bean.id} uuid=${bean.uuid} name=${bean.name} " +
-                                    "isActive=$isActive rssi=${bean.rssi}"
+                                    "productId=$productId isbind=$bound rssi=${bean.rssi}"
                             )
                             android.util.Log.d(
                                 "MainActivity",
@@ -1941,7 +2069,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                 if (isScanning) {
                     android.util.Log.d(
                         "MainActivity",
-                        "⏰ Scan timeout (10s), resetting isScanning flag"
+                        "⏰ Scan timeout (40s), resetting isScanning flag"
                     )
                     isScanning = false
                     mainHandler.post {
@@ -1950,7 +2078,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                 }
             }
             scanTimeoutRunnable = timeout
-            mainHandler.postDelayed(timeout, 11000)
+            mainHandler.postDelayed(timeout, 41000)
 
             android.util.Log.d(
                 "MainActivity",
