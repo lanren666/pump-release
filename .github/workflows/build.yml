@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: snapshot (internal verify) or release (store-facing)
+        description: snapshot (verify) or release (public)
         type: choice
         required: true
         default: snapshot
@@ -12,7 +12,7 @@ on:
           - snapshot
           - release
       version:
-        description: Marketing version x.y.z (empty = pubspec.yaml)
+        description: "x.y.z or x.y.z+n (empty = pubspec build number +1, e.g. 1.1.1+2 -> 1.1.1+3)"
         type: string
         required: false
         default: ""
@@ -27,11 +27,16 @@ on:
           - ios
 
 concurrency:
-  group: pump-build-${{ github.ref }}-${{ github.event.inputs.platforms }}
+  group: pump-build-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: write
 
 env:
   FLUTTER_VERSION: "3.35.7"
+  OSS_ENDPOINT: oss-cn-shenzhen.aliyuncs.com
+  OSS_BUCKET: sporra-mom
 
 jobs:
   prepare:
@@ -40,8 +45,13 @@ jobs:
     outputs:
       build_name: ${{ steps.meta.outputs.build_name }}
       build_number: ${{ steps.meta.outputs.build_number }}
+      flutter_version: ${{ steps.meta.outputs.flutter_version }}
       artifact_prefix: ${{ steps.meta.outputs.artifact_prefix }}
       channel: ${{ steps.meta.outputs.channel }}
+      channel_label: ${{ steps.meta.outputs.channel_label }}
+      oss_dir: ${{ steps.meta.outputs.oss_dir }}
+      oss_apk: ${{ steps.meta.outputs.oss_apk }}
+      oss_ipa: ${{ steps.meta.outputs.oss_ipa }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,20 +64,78 @@ jobs:
         run: |
           set -euo pipefail
           pubspec_version="$(awk '/^version:/{print $2; exit}' pubspec.yaml)"
-          default_name="${pubspec_version%%+*}"
-          build_name="${INPUT_VERSION:-$default_name}"
-          if ! [[ "$build_name" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Marketing version must be x.y.z, got: $build_name" >&2
+          pub_name="${pubspec_version%%+*}"
+          pub_number="${pubspec_version##*+}"
+          if [[ "$pubspec_version" != *"+"* ]] || ! [[ "$pub_number" =~ ^[0-9]+$ ]]; then
+            echo "pubspec.yaml version must be x.y.z+n, got: $pubspec_version" >&2
             exit 1
           fi
-          build_number="${GITHUB_RUN_NUMBER}"
+
+          raw="${INPUT_VERSION:-}"
+          raw="${raw#"${raw%%[![:space:]]*}"}"
+          raw="${raw%"${raw##*[![:space:]]}"}"
+
+          if [ -z "$raw" ]; then
+            build_name="$pub_name"
+            build_number="$((pub_number + 1))"
+          elif [[ "$raw" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]]; then
+            build_name="${raw%%+*}"
+            build_number="${raw##*+}"
+            if [ "$build_number" -le "$pub_number" ]; then
+              echo "Build number $build_number must be greater than pubspec $pub_number" >&2
+              exit 1
+            fi
+          elif [[ "$raw" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            build_name="$raw"
+            build_number="$((pub_number + 1))"
+          else
+            echo "Version must be x.y.z or x.y.z+n, got: $raw" >&2
+            exit 1
+          fi
+
           channel="${INPUT_CHANNEL:-snapshot}"
-          prefix="SporraMom-${build_name}+${build_number}-${channel}"
-          echo "build_name=$build_name" >> "$GITHUB_OUTPUT"
-          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
-          echo "artifact_prefix=$prefix" >> "$GITHUB_OUTPUT"
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          echo "Resolved $prefix"
+          if [ "$channel" = "release" ]; then
+            channel_label="RELEASE"
+          else
+            channel_label="SNAPSHOT"
+          fi
+
+          flutter_version="${build_name}+${build_number}"
+          prefix="SporraMom-v${build_name}-${channel_label}"
+          oss_dir="apks/v${build_name}"
+          oss_apk="${prefix}.apk"
+          oss_ipa="${prefix}.ipa"
+
+          {
+            echo "build_name=$build_name"
+            echo "build_number=$build_number"
+            echo "flutter_version=$flutter_version"
+            echo "artifact_prefix=$prefix"
+            echo "channel=$channel"
+            echo "channel_label=$channel_label"
+            echo "oss_dir=$oss_dir"
+            echo "oss_apk=$oss_apk"
+            echo "oss_ipa=$oss_ipa"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved $flutter_version -> oss://sporra-mom/${oss_dir}/${oss_apk}"
+
+      - name: Persist version in pubspec.yaml
+        env:
+          FLUTTER_VERSION_LINE: ${{ steps.meta.outputs.flutter_version }}
+        run: |
+          set -euo pipefail
+          current="$(awk '/^version:/{print $2; exit}' pubspec.yaml)"
+          if [ "$current" = "$FLUTTER_VERSION_LINE" ]; then
+            echo "pubspec.yaml already at $current"
+            exit 0
+          fi
+          sed -i -E "s/^version: .*/version: ${FLUTTER_VERSION_LINE}/" pubspec.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml
+          git commit -m "chore: bump version to ${FLUTTER_VERSION_LINE}"
+          git push
+          echo "Committed pubspec.yaml version $FLUTTER_VERSION_LINE"
 
   android:
     name: Android
@@ -94,7 +162,6 @@ jobs:
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
-        id: setup-ndk
         with:
           ndk-version: r27
           link-to-sdk: true
@@ -128,7 +195,7 @@ jobs:
             --build-name "${{ needs.prepare.outputs.build_name }}" \
             --build-number "${{ needs.prepare.outputs.build_number }}"
           cp build/app/outputs/flutter-apk/app-debug.apk \
-            "${{ needs.prepare.outputs.artifact_prefix }}-android-debug.apk"
+            "${{ needs.prepare.outputs.artifact_prefix }}-debug.apk"
 
       - name: Build Android release APK
         run: |
@@ -136,15 +203,15 @@ jobs:
             --build-name "${{ needs.prepare.outputs.build_name }}" \
             --build-number "${{ needs.prepare.outputs.build_number }}"
           cp build/app/outputs/flutter-apk/app-release.apk \
-            "${{ needs.prepare.outputs.artifact_prefix }}-android-release.apk"
+            "${{ needs.prepare.outputs.oss_apk }}"
 
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ needs.prepare.outputs.artifact_prefix }}-android
           path: |
-            ${{ needs.prepare.outputs.artifact_prefix }}-android-debug.apk
-            ${{ needs.prepare.outputs.artifact_prefix }}-android-release.apk
+            ${{ needs.prepare.outputs.artifact_prefix }}-debug.apk
+            ${{ needs.prepare.outputs.oss_apk }}
           if-no-files-found: error
 
   ios:
@@ -188,7 +255,7 @@ jobs:
           rm -rf Payload
           mkdir Payload
           cp -R "$app" Payload/Runner.app
-          zip -r -y "${prefix}-ios-debug.ipa" Payload
+          zip -r -y "${prefix}-debug.ipa" Payload
           rm -rf Payload
 
       - name: Build iOS release (unsigned)
@@ -197,7 +264,7 @@ jobs:
           flutter build ios --release --no-codesign \
             --build-name "${{ needs.prepare.outputs.build_name }}" \
             --build-number "${{ needs.prepare.outputs.build_number }}"
-          prefix="${{ needs.prepare.outputs.artifact_prefix }}"
+          ipa="${{ needs.prepare.outputs.oss_ipa }}"
           app="$(find build/ios -path '*iphoneos/Runner.app' -type d | head -n 1)"
           if [ -z "$app" ]; then
             echo "Runner.app not found after release build" >&2
@@ -207,7 +274,7 @@ jobs:
           rm -rf Payload
           mkdir Payload
           cp -R "$app" Payload/Runner.app
-          zip -r -y "${prefix}-ios-release.ipa" Payload
+          zip -r -y "$ipa" Payload
           rm -rf Payload
 
       - name: Upload iOS artifacts
@@ -215,6 +282,62 @@ jobs:
         with:
           name: ${{ needs.prepare.outputs.artifact_prefix }}-ios
           path: |
-            ${{ needs.prepare.outputs.artifact_prefix }}-ios-debug.ipa
-            ${{ needs.prepare.outputs.artifact_prefix }}-ios-release.ipa
+            ${{ needs.prepare.outputs.artifact_prefix }}-debug.ipa
+            ${{ needs.prepare.outputs.oss_ipa }}
           if-no-files-found: error
+
+  upload-oss:
+    name: Upload OSS
+    needs: [prepare, android, ios]
+    if: ${{ always() && needs.prepare.result == 'success' && (needs.android.result == 'success' || needs.ios.result == 'success') && (needs.android.result == 'success' || needs.android.result == 'skipped') && (needs.ios.result == 'success' || needs.ios.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download Android artifacts
+        if: ${{ needs.android.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.artifact_prefix }}-android
+          path: dist
+
+      - name: Download iOS artifacts
+        if: ${{ needs.ios.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.artifact_prefix }}-ios
+          path: dist
+
+      - name: Download ossutil
+        run: |
+          curl -L https://gosspublic.alicdn.com/ossutil/1.7.16/ossutil64 -o ossutil64
+          chmod +x ossutil64
+
+      - name: Configure ossutil
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ALIYUN_ACCESS_KEY_ID:-}" ] || [ -z "${ALIYUN_ACCESS_KEY_SECRET:-}" ]; then
+            echo "Missing ALIYUN_ACCESS_KEY_ID / ALIYUN_ACCESS_KEY_SECRET" >&2
+            exit 1
+          fi
+          ./ossutil64 config -e "$OSS_ENDPOINT" -i "$ALIYUN_ACCESS_KEY_ID" -k "$ALIYUN_ACCESS_KEY_SECRET"
+
+      - name: Upload packages to OSS
+        env:
+          OSS_DIR: ${{ needs.prepare.outputs.oss_dir }}
+          OSS_APK: ${{ needs.prepare.outputs.oss_apk }}
+          OSS_IPA: ${{ needs.prepare.outputs.oss_ipa }}
+        run: |
+          set -euo pipefail
+          dest="oss://${OSS_BUCKET}/${OSS_DIR}"
+          if [ -f "dist/${OSS_APK}" ]; then
+            ./ossutil64 cp "dist/${OSS_APK}" "${dest}/${OSS_APK}" --force
+            echo "Uploaded ${dest}/${OSS_APK}"
+          fi
+          if [ -f "dist/${OSS_IPA}" ]; then
+            ./ossutil64 cp "dist/${OSS_IPA}" "${dest}/${OSS_IPA}" --force
+            echo "Uploaded ${dest}/${OSS_IPA}"
+          fi
+          ./ossutil64 ls "${dest}/"
