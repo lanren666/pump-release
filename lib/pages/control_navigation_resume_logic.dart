@@ -28,6 +28,16 @@ class ControlNavigationResumeLogic {
     return (left: leftHasStarted, right: rightHasStarted);
   }
 
+  /// Both devices still running in the DB after a page rebuild means this
+  /// was a Both session — restore the flag so a later DP105 cannot steal
+  /// the tab if hasStarted is briefly cleared.
+  static bool shouldRestoreSessionStartedAsBoth({
+    required bool leftRunning,
+    required bool rightRunning,
+  }) {
+    return leftRunning && rightRunning;
+  }
+
   /// Mirrors _getCurrentHasStarted(): true when the currently selected side
   /// has been started (used to compute shouldUpdate in the DP handler).
   static bool getCurrentHasStarted({

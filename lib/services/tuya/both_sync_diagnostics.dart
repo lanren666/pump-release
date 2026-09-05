@@ -45,9 +45,9 @@ class BothSyncDiagnostics {
     required bool leftAlive,
     required bool rightAlive,
   }) {
-    PumpLog.d(
+    PumpLog.i(
       tag,
-      'defer: DP105 asymmetric '
+      'defer: single-side drop '
       'L_alive=$leftAlive(${_shortId(leftDevId)}) '
       'R_alive=$rightAlive(${_shortId(rightDevId)}) — skip desync until both report',
     );
@@ -66,6 +66,30 @@ class BothSyncDiagnostics {
     );
   }
 
+  /// Kick/reconnect is allowed while the Both session is still the owner.
+  static bool canRecoverDroppedBothSide({
+    required bool isIndividualMode,
+    required bool selectedPumpIsBoth,
+    required bool sessionStartedAsBoth,
+  }) {
+    if (isIndividualMode) return false;
+    return selectedPumpIsBoth || sessionStartedAsBoth;
+  }
+
+  /// When one side's DP105 or BLE link is down, frozen memory must not count
+  /// as a real Both-mode desync (that path used to force individual mode).
+  static bool isAsymmetricLink({
+    required bool leftAlive,
+    required bool rightAlive,
+    bool? leftLinked,
+    bool? rightLinked,
+  }) {
+    if (leftAlive != rightAlive) return true;
+    return leftLinked != null &&
+        rightLinked != null &&
+        leftLinked != rightLinked;
+  }
+
   static String? failReason({
     required bool leftAlive,
     required bool rightAlive,
@@ -78,8 +102,17 @@ class BothSyncDiagnostics {
     required int leftPhaseSec,
     required int rightPhaseSec,
     required int thresholdSec,
+    bool? leftLinked,
+    bool? rightLinked,
   }) {
-    if (leftAlive != rightAlive) return null;
+    if (isAsymmetricLink(
+      leftAlive: leftAlive,
+      rightAlive: rightAlive,
+      leftLinked: leftLinked,
+      rightLinked: rightLinked,
+    )) {
+      return null;
+    }
     if (leftMode != rightMode) return 'mode($leftMode≠$rightMode)';
     if (leftPhase != rightPhase) return 'phase($leftPhase≠$rightPhase)';
     final totalDiff = (leftTotalSec - rightTotalSec).abs();

@@ -410,6 +410,47 @@ void main() {
         isFalse,
       );
     });
+
+    test('idle DP（app 已认为未在跑）不得当成会话结束去清 flag', () {
+      expect(
+        ControlNavigationResumeLogic.shouldClearSessionStartedAsBoth(
+          leftHasStarted: false,
+          rightHasStarted: false,
+          isSessionEndCleanup: false,
+        ),
+        isFalse,
+        reason: 'idle isRunning=0 after DB flicker must not drop the Both flag',
+      );
+    });
+  });
+
+  group('shouldRestoreSessionStartedAsBoth', () {
+    test('双侧 DB 仍在跑 → 恢复 Both 会话标记', () {
+      expect(
+        ControlNavigationResumeLogic.shouldRestoreSessionStartedAsBoth(
+          leftRunning: true,
+          rightRunning: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('只有单侧在跑 → 不恢复（保留硬件启动切单侧）', () {
+      expect(
+        ControlNavigationResumeLogic.shouldRestoreSessionStartedAsBoth(
+          leftRunning: true,
+          rightRunning: false,
+        ),
+        isFalse,
+      );
+      expect(
+        ControlNavigationResumeLogic.shouldRestoreSessionStartedAsBoth(
+          leftRunning: false,
+          rightRunning: true,
+        ),
+        isFalse,
+      );
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -1272,6 +1272,12 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         if (!_leftHasStarted) _leftHasStarted = true;
         if (!_rightHasStarted) _rightHasStarted = true;
       }
+      if (ControlNavigationResumeLogic.shouldRestoreSessionStartedAsBoth(
+        leftRunning: leftRunning,
+        rightRunning: rightRunning,
+      )) {
+        _sessionStartedAsBoth = true;
+      }
     });
   }
 
@@ -1318,7 +1324,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             elapsedSeconds: _leftElapsedTime.inSeconds,
             lastRunningTimePast: _leftLastRunningTimePast,
           );
-          if (_selectedPump == PumpSelection.both &&
+          if (_canRecoverDroppedBothSide() &&
               _rightHasStarted &&
               _rightIsRunning &&
               ControlDbRefreshKickLogic.shouldKickOnDbOffline(
@@ -1347,7 +1353,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         }
         if (!wasLeftConnected &&
             isLeftConnected &&
-            _selectedPump == PumpSelection.both &&
+            _canRecoverDroppedBothSide() &&
             _rightHasStarted &&
             _rightIsRunning) {
           unawaited(
@@ -1373,7 +1379,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             elapsedSeconds: _rightElapsedTime.inSeconds,
             lastRunningTimePast: _rightLastRunningTimePast,
           );
-          if (_selectedPump == PumpSelection.both &&
+          if (_canRecoverDroppedBothSide() &&
               _leftHasStarted &&
               _leftIsRunning &&
               ControlDbRefreshKickLogic.shouldKickOnDbOffline(
@@ -1402,7 +1408,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         }
         if (!wasRightConnected &&
             isRightConnected &&
-            _selectedPump == PumpSelection.both &&
+            _canRecoverDroppedBothSide() &&
             _leftHasStarted &&
             _leftIsRunning) {
           unawaited(
@@ -3915,23 +3921,46 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     final leftPhaseSec = _leftElapsedTimeInPhase.inSeconds;
     final rightPhaseSec = _rightElapsedTimeInPhase.inSeconds;
 
-    String? failReason;
-    if (_leftIntensityMode != _rightIntensityMode) {
-      failReason = 'mode($leftMode≠$rightMode)';
-    } else if (_leftCurrentPhase != _rightCurrentPhase) {
-      failReason = 'phase($_leftCurrentPhase≠$_rightCurrentPhase)';
-    } else if ((leftTotalSec - rightTotalSec).abs() >
-        _bothTimeSyncThresholdSeconds) {
-      failReason =
-          'totalTime(diff=${(leftTotalSec - rightTotalSec).abs()}s>${_bothTimeSyncThresholdSeconds}s)';
-    } else if ((leftPhaseSec - rightPhaseSec).abs() >
-        _bothTimeSyncThresholdSeconds) {
-      failReason =
-          'phaseTime(diff=${(leftPhaseSec - rightPhaseSec).abs()}s>${_bothTimeSyncThresholdSeconds}s)';
-    }
+    final leftAlive =
+        leftDevId != null && DpAliveTracker.isRecentlyAlive(leftDevId);
+    final rightAlive =
+        rightDevId != null && DpAliveTracker.isRecentlyAlive(rightDevId);
+    final leftLinked = _isDeviceConnected(_leftDevice);
+    final rightLinked = _isDeviceConnected(_rightDevice);
+    final asymmetric = BothSyncDiagnostics.isAsymmetricLink(
+      leftAlive: leftAlive,
+      rightAlive: rightAlive,
+      leftLinked: leftLinked,
+      rightLinked: rightLinked,
+    );
+
+    final failReason = BothSyncDiagnostics.failReason(
+      leftAlive: leftAlive,
+      rightAlive: rightAlive,
+      leftLinked: leftLinked,
+      rightLinked: rightLinked,
+      leftMode: leftMode,
+      rightMode: rightMode,
+      leftPhase: _leftCurrentPhase,
+      rightPhase: _rightCurrentPhase,
+      leftTotalSec: leftTotalSec,
+      rightTotalSec: rightTotalSec,
+      leftPhaseSec: leftPhaseSec,
+      rightPhaseSec: rightPhaseSec,
+      thresholdSec: _bothTimeSyncThresholdSeconds,
+    );
 
     final syncOk = failReason == null;
     _lastBothSyncFailReason = failReason;
+
+    if (asymmetric) {
+      BothSyncDiagnostics.logAsymmetricDp105(
+        leftDevId: leftDevId,
+        rightDevId: rightDevId,
+        leftAlive: leftAlive || leftLinked,
+        rightAlive: rightAlive || rightLinked,
+      );
+    }
 
     BothSyncDiagnostics.logCheck(
       leftDevId: leftDevId,
@@ -3947,11 +3976,20 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       leftPhaseSec: leftPhaseSec,
       rightPhaseSec: rightPhaseSec,
       syncOk: syncOk,
-      failReason: failReason,
+      failReason: asymmetric ? 'defer_asymmetric' : failReason,
       desyncCount: _bothNotSynchronizedCount,
     );
 
     return syncOk;
+  }
+
+  /// Reconnect recovery stays on the Both session even if the tab flickered.
+  bool _canRecoverDroppedBothSide() {
+    return BothSyncDiagnostics.canRecoverDroppedBothSide(
+      isIndividualMode: _isIndividualMode,
+      selectedPumpIsBoth: _selectedPump == PumpSelection.both,
+      sessionStartedAsBoth: _sessionStartedAsBoth,
+    );
   }
 
   /// 切换到独立模式：当 both 模式下检测到设备不同步时，切换到独立模式
@@ -4118,7 +4156,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     required String reason,
   }) async {
     if (!AppConfig.tuyaEnabled) return;
-    if (_selectedPump != PumpSelection.both || _isIndividualMode) return;
+    if (!_canRecoverDroppedBothSide()) return;
 
     final device = isLeft ? _leftDevice : _rightDevice;
     final otherStarted = isLeft ? _rightHasStarted : _leftHasStarted;
