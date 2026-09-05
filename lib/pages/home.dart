@@ -18,6 +18,7 @@ import '../services/tuya/first_dp_or_timeout.dart';
 import '../services/tuya/device_listener_service.dart';
 import '../services/tuya/device_reconnect_policy.dart';
 import '../services/tuya/native_ble_device_id.dart';
+import '../services/tuya/native_connect_result_logic.dart';
 import '../services/tuya/running_status_log.dart';
 import '../l10n/app_localizations.dart';
 import '../services/diagnostics/app_logger.dart';
@@ -293,7 +294,10 @@ class _HomePageState extends State<HomePage>
               final deviceId = deviceJson['id'] as String? ?? '';
               final devId = deviceJson['devId'] as String? ?? '';
               final uuid = deviceJson['uuid'] as String? ?? '';
-              final productKey = deviceJson['providerName'] as String? ?? '';
+              final productKey = NativeConnectResultLogic.productKeyFromScan(
+                productId: deviceJson['productId'] as String? ?? '',
+                providerName: deviceJson['providerName'] as String? ?? '',
+              );
 
               debugPrint('🔍 设备信息: $deviceJson');
 
@@ -1430,8 +1434,11 @@ class _HomePageState extends State<HomePage>
     }
 
     try {
-      bool result = false;
-      String? returnedDevId;
+      var parsed = const NativeConnectResult(
+        success: false,
+        pending: false,
+        devId: null,
+      );
 
       if (AppConfig.tuyaEnabled) {
         final sw = Stopwatch()..start();
@@ -1507,33 +1514,27 @@ class _HomePageState extends State<HomePage>
             .invokeMethod('connectDevice', connectParams)
             .timeout(const Duration(seconds: 55));
         debugPrint('🔌 [connectDevice] invokeMethod 返回 bluetoothId=${device.bluetoothId} result=$connectionResult');
-        // 处理返回结果：可能是bool（旧版本兼容）或Map（新版本包含devId）
-        if (connectionResult is bool) {
-          result = connectionResult;
-          returnedDevId = null;
-        } else if (connectionResult is Map) {
-          result = connectionResult['success'] as bool? ?? false;
-          returnedDevId = connectionResult['devId'] as String?;
-        } else {
-          result = false;
-          returnedDevId = null;
-        }
+        parsed = NativeConnectResultLogic.parse(connectionResult);
         AppLogger.hardware('connectDevice native result', {
           'bluetoothId': device.bluetoothId,
-          'success': result,
-          'returnedDevId': returnedDevId,
+          'success': parsed.success,
+          'pending': parsed.pending,
+          'returnedDevId': parsed.devId,
         });
         debugPrint(
-          '[BLE_REPRO] connectDevice native success=$result returnedDevId=$returnedDevId',
+          '[BLE_REPRO] connectDevice native success=${parsed.success} pending=${parsed.pending} returnedDevId=${parsed.devId}',
         );
       } else {
-        result = true;
-        returnedDevId = null;
+        parsed = const NativeConnectResult(
+          success: true,
+          pending: false,
+          devId: null,
+        );
       }
 
-      if (result == true) {
+      if (parsed.shouldRemember) {
         // 优先使用返回的devId，如果没有则从数据库或内存中获取
-        String? finalDevId = returnedDevId;
+        String? finalDevId = parsed.devId;
         
         if (finalDevId == null || finalDevId.isEmpty) {
           // 已配对设备（DB 里有 devId）不需要等；只有首次配对才需要等 deviceActivated 写入 devId
@@ -1556,6 +1557,11 @@ class _HomePageState extends State<HomePage>
             finalDevId = latestDevId;
           }
         }
+
+        if (!parsed.canRememberWithDevId(finalDevId)) {
+          debugPrint('❌ pending connect has no Tuya devId: ${device.bluetoothId}');
+          return false;
+        }
         
         final persistedProductKey =
             device.productKey.isNotEmpty ? device.productKey : null;
@@ -1564,7 +1570,7 @@ class _HomePageState extends State<HomePage>
           name: device.name,
           battery: device.battery,
           position: position,
-          isRunning: true,
+          isRunning: parsed.shouldMarkRunning,
           isRemembered: true,
           devId: (finalDevId != null && finalDevId.isNotEmpty) ? finalDevId : null,
           productKey: persistedProductKey,
@@ -1594,7 +1600,7 @@ class _HomePageState extends State<HomePage>
             newDevice.copyWith(
               id: existingDevice.id,
               devId: devIdToUse,
-              isRunning: true,
+              isRunning: parsed.shouldMarkRunning,
               isRemembered: true,
               productKey: persistedProductKey ?? existingDevice.productKey,
             ),
@@ -1603,7 +1609,7 @@ class _HomePageState extends State<HomePage>
           await _dbService.insertDevice(newDevice);
         }
 
-        if (AppConfig.tuyaEnabled) {
+        if (AppConfig.tuyaEnabled && parsed.shouldPublishDeviceSymbol) {
           _publishDeviceSymbolAfterFirstDp(device.bluetoothId, position, newDevice.devId);
         }
 
@@ -1613,19 +1619,24 @@ class _HomePageState extends State<HomePage>
           });
         }
 
-        _showConnectionMessage(device.name, side);
+        if (parsed.shouldAnnounceConnected) {
+          _showConnectionMessage(device.name, side);
+        }
         AppLogger.user('connectDevice success', {
           'bluetoothId': device.bluetoothId,
           'devId': newDevice.devId,
           'position': position,
+          'pending': parsed.pending,
         });
 
         final savedDevice = await _dbService.getDeviceByBluetoothId(
           device.bluetoothId,
         );
-        _devicePendingConnectLowBatteryCheck = savedDevice ?? newDevice;
-        if (savedDevice != null) {
-          // 刚连上的设备跳过 isDeviceOnline 检查，native 刚说连接成功设备必然在线
+        if (parsed.shouldCheckLowBattery) {
+          _devicePendingConnectLowBatteryCheck = savedDevice ?? newDevice;
+        }
+        if (parsed.shouldRegisterListener && savedDevice != null) {
+          // Native already confirmed local BLE online.
           await DeviceListenerService.registerIfRunning(savedDevice, bypassOnlineCheck: true);
         }
 
@@ -1650,6 +1661,22 @@ class _HomePageState extends State<HomePage>
         try {
           await connectionChannel.invokeMethod('resetBleActivationState');
         } catch (_) {}
+      }
+      if (mounted && NativeConnectResultLogic.shouldPromptRePair(e.code)) {
+        final l10n = AppLocalizations.of(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              l10n?.deviceRemovedOfflineNeedPairing ??
+                  'No Tuya bind for this pump. Put it in pairing mode and search again.',
+            ),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      } else if (mounted && NativeConnectResultLogic.shouldPromptHomeRetry(e.code)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('初始化中，请稍后重试')),
+        );
       }
       return false;
     } catch (e) {
