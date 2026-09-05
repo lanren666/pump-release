@@ -1,0 +1,220 @@
+name: Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: snapshot (internal verify) or release (store-facing)
+        type: choice
+        required: true
+        default: snapshot
+        options:
+          - snapshot
+          - release
+      version:
+        description: Marketing version x.y.z (empty = pubspec.yaml)
+        type: string
+        required: false
+        default: ""
+      platforms:
+        description: Which platforms to build
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - android
+          - ios
+
+concurrency:
+  group: pump-build-${{ github.ref }}-${{ github.event.inputs.platforms }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.35.7"
+
+jobs:
+  prepare:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      build_name: ${{ steps.meta.outputs.build_name }}
+      build_number: ${{ steps.meta.outputs.build_number }}
+      artifact_prefix: ${{ steps.meta.outputs.artifact_prefix }}
+      channel: ${{ steps.meta.outputs.channel }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute version metadata
+        id: meta
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          pubspec_version="$(awk '/^version:/{print $2; exit}' pubspec.yaml)"
+          default_name="${pubspec_version%%+*}"
+          build_name="${INPUT_VERSION:-$default_name}"
+          if ! [[ "$build_name" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Marketing version must be x.y.z, got: $build_name" >&2
+            exit 1
+          fi
+          build_number="${GITHUB_RUN_NUMBER}"
+          channel="${INPUT_CHANNEL:-snapshot}"
+          prefix="SporraMom-${build_name}+${build_number}-${channel}"
+          echo "build_name=$build_name" >> "$GITHUB_OUTPUT"
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
+          echo "artifact_prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "Resolved $prefix"
+
+  android:
+    name: Android
+    needs: prepare
+    if: ${{ inputs.platforms == 'all' || inputs.platforms == 'android' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27
+          link-to-sdk: true
+
+      - name: Restore Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ] || [ -z "${ANDROID_KEYSTORE_PASSWORD:-}" ] || [ -z "${ANDROID_KEY_PASSWORD:-}" ] || [ -z "${ANDROID_KEY_ALIAS:-}" ]; then
+            echo "Missing Android signing secrets (ANDROID_KEYSTORE_BASE64 / PASSWORD / KEY_PASSWORD / KEY_ALIAS)" >&2
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/sporramom-release.keystore
+          {
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "storeFile=sporramom-release.keystore"
+          } > android/key.properties
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Build Android debug APK
+        run: |
+          flutter build apk --debug \
+            --build-name "${{ needs.prepare.outputs.build_name }}" \
+            --build-number "${{ needs.prepare.outputs.build_number }}"
+          cp build/app/outputs/flutter-apk/app-debug.apk \
+            "${{ needs.prepare.outputs.artifact_prefix }}-android-debug.apk"
+
+      - name: Build Android release APK
+        run: |
+          flutter build apk --release \
+            --build-name "${{ needs.prepare.outputs.build_name }}" \
+            --build-number "${{ needs.prepare.outputs.build_number }}"
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "${{ needs.prepare.outputs.artifact_prefix }}-android-release.apk"
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.artifact_prefix }}-android
+          path: |
+            ${{ needs.prepare.outputs.artifact_prefix }}-android-debug.apk
+            ${{ needs.prepare.outputs.artifact_prefix }}-android-release.apk
+          if-no-files-found: error
+
+  ios:
+    name: iOS
+    needs: prepare
+    if: ${{ inputs.platforms == 'all' || inputs.platforms == 'ios' }}
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install --repo-update
+
+      - name: Build iOS debug (unsigned)
+        run: |
+          set -euo pipefail
+          flutter build ios --debug --no-codesign \
+            --build-name "${{ needs.prepare.outputs.build_name }}" \
+            --build-number "${{ needs.prepare.outputs.build_number }}"
+          prefix="${{ needs.prepare.outputs.artifact_prefix }}"
+          app="$(find build/ios -path '*iphoneos/Runner.app' -type d | head -n 1)"
+          if [ -z "$app" ]; then
+            echo "Runner.app not found after debug build" >&2
+            find build/ios -name 'Runner.app' -o -name '*.app' >&2 || true
+            exit 1
+          fi
+          rm -rf Payload
+          mkdir Payload
+          cp -R "$app" Payload/Runner.app
+          zip -r -y "${prefix}-ios-debug.ipa" Payload
+          rm -rf Payload
+
+      - name: Build iOS release (unsigned)
+        run: |
+          set -euo pipefail
+          flutter build ios --release --no-codesign \
+            --build-name "${{ needs.prepare.outputs.build_name }}" \
+            --build-number "${{ needs.prepare.outputs.build_number }}"
+          prefix="${{ needs.prepare.outputs.artifact_prefix }}"
+          app="$(find build/ios -path '*iphoneos/Runner.app' -type d | head -n 1)"
+          if [ -z "$app" ]; then
+            echo "Runner.app not found after release build" >&2
+            find build/ios -name 'Runner.app' -o -name '*.app' >&2 || true
+            exit 1
+          fi
+          rm -rf Payload
+          mkdir Payload
+          cp -R "$app" Payload/Runner.app
+          zip -r -y "${prefix}-ios-release.ipa" Payload
+          rm -rf Payload
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.artifact_prefix }}-ios
+          path: |
+            ${{ needs.prepare.outputs.artifact_prefix }}-ios-debug.ipa
+            ${{ needs.prepare.outputs.artifact_prefix }}-ios-release.ipa
+          if-no-files-found: error
