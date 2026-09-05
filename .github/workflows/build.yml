@@ -326,6 +326,7 @@ jobs:
 
       - name: Upload packages to OSS
         env:
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
           OSS_DIR: ${{ needs.prepare.outputs.oss_dir }}
           OSS_APK: ${{ needs.prepare.outputs.oss_apk }}
           OSS_IPA: ${{ needs.prepare.outputs.oss_ipa }}
@@ -341,3 +342,30 @@ jobs:
             echo "Uploaded ${dest}/${OSS_IPA}"
           fi
           ./ossutil64 ls "${dest}/"
+
+          if [ "${CHANNEL}" != "release" ]; then
+            echo "Skip latest/ rotation for channel=${CHANNEL}"
+            exit 0
+          fi
+          if [ ! -f "dist/${OSS_APK}" ]; then
+            echo "Skip latest/ rotation: release APK not built"
+            exit 0
+          fi
+
+          latest="oss://${OSS_BUCKET}/latest/SporraMom-latest.apk"
+          if ./ossutil64 stat "${latest}" >/dev/null 2>&1; then
+            day="$(TZ=Asia/Shanghai date +%Y%m%d)"
+            archive="oss://${OSS_BUCKET}/latest/SporraMom-latest_${day}.apk"
+            if ./ossutil64 stat "${archive}" >/dev/null 2>&1; then
+              archive="oss://${OSS_BUCKET}/latest/SporraMom-latest_$(TZ=Asia/Shanghai date +%Y%m%d%H%M%S).apk"
+            fi
+            ./ossutil64 cp "${latest}" "${archive}" --force
+            echo "Archived previous latest -> ${archive}"
+          else
+            echo "No previous ${latest}"
+          fi
+
+          ./ossutil64 cp "dist/${OSS_APK}" "${latest}" --force --acl public-read
+          ./ossutil64 set-acl "${latest}" public-read -f
+          echo "Published ${latest} (public-read)"
+          ./ossutil64 ls "oss://${OSS_BUCKET}/latest/"
