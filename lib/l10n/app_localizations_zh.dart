@@ -131,6 +131,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get deviceRemoved => '设备已移除';
 
   @override
+  String get deviceRemovedOfflineNeedPairing =>
+      '设备已从云端解绑。离线删除不会重置泵端绑定，请将泵重新置于配对模式后再搜索。';
+
+  @override
   String foundDevices(int count) {
     return '找到 $count 个设备';
   }

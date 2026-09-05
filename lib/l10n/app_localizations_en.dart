@@ -137,6 +137,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get deviceRemoved => 'Device removed';
 
   @override
+  String get deviceRemovedOfflineNeedPairing =>
+      'Device unbound from the cloud. Offline remove does not reset the pump. Put it in pairing mode and search again.';
+
+  @override
   String foundDevices(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,

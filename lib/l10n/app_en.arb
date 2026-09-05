@@ -169,6 +169,10 @@
   "@deviceRemoved": {
     "description": "Message when device is removed"
   },
+  "deviceRemovedOfflineNeedPairing": "Device unbound from the cloud. Offline remove does not reset the pump. Put it in pairing mode and search again.",
+  "@deviceRemovedOfflineNeedPairing": {
+    "description": "Message after removing a device that was offline"
+  },
   "foundDevices": "Found {count} {count, plural, =1{device} other{devices}}",
   "@foundDevices": {
     "description": "Message when devices are found",

@@ -1408,8 +1408,12 @@ class MainActivity : FlutterActivity(), LocationListener {
         android.util.Log.d("MainActivity", "🗑️ 开始移除设备: $devId")
 
         val mDevice: IThingDevice? = ThingHomeSdk.newDeviceInstance(devId)
+        if (mDevice == null) {
+            result.error("REMOVE_FAILED", "Device instance is null", mapOf("devId" to devId))
+            return
+        }
 
-        mDevice?.removeDevice(object : IResultCallback {
+        mDevice.removeDevice(object : IResultCallback {
             override fun onError(errorCode: String, errorMsg: String) {
                 android.util.Log.e("MainActivity", "❌ 移除设备失败: $errorCode - $errorMsg")
                 result.error(

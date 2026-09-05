@@ -50,6 +50,7 @@ class _HomePageState extends State<HomePage>
   final List<BluetoothDevice> _scannedDevices = [];
   ConnectedDevice? _devicePendingConnectLowBatteryCheck;
   final Set<String> _disconnectingIds = {};
+  bool _pendingOfflineRemoveHint = false;
 
   @override
   void initState() {
@@ -1607,27 +1608,57 @@ class _HomePageState extends State<HomePage>
   Future<void> _disconnectDevice(String bluetoothId) async {
     if (_disconnectingIds.contains(bluetoothId)) return;
     _disconnectingIds.add(bluetoothId);
+    _pendingOfflineRemoveHint = false;
     try {
       AppLogger.user('disconnectDevice', {'bluetoothId': bluetoothId});
       final device = await _dbService.getDeviceByBluetoothId(bluetoothId);
       if (device != null) {
+        var removeOk = false;
+        var wasLocallyOnline = false;
         if (device.devId != null &&
             device.devId!.isNotEmpty &&
             AppConfig.tuyaEnabled) {
           try {
+            wasLocallyOnline =
+                await connectionChannel.invokeMethod('isDeviceOnline', {
+                      'deviceId': device.devId,
+                      'bluetoothId': device.bluetoothId,
+                    })
+                    as bool? ??
+                false;
+          } catch (_) {
+            wasLocallyOnline = false;
+          }
+          try {
             await connectionChannel.invokeMethod('removeDevice', {
               'devId': device.devId,
             });
+            removeOk = true;
           } catch (e) {
             debugPrint('❌ 移除设备失败: $e');
           }
         }
 
-        // Clear devId so a future re-pairing of the same physical device does not
-        // inherit a stale Tuya devId that was already removed from the cloud.
+        // Official: offline remove unbinds cloud only. Keep local devId if
+        // cloud remove failed so a later retry can still target the same device.
+        final shouldClearDevId = removeOk ||
+            device.devId == null ||
+            device.devId!.isEmpty;
         await _dbService.updateDevice(
-          device.copyWith(isRemembered: false, isRunning: false, devId: ''),
+          device.copyWith(
+            isRemembered: false,
+            isRunning: false,
+            devId: shouldClearDevId ? '' : device.devId,
+          ),
         );
+        if (removeOk && !wasLocallyOnline && AppConfig.tuyaEnabled) {
+          try {
+            await connectionChannel.invokeMethod('resetBleActivationState');
+          } catch (e) {
+            debugPrint('resetBleActivationState failed: $e');
+          }
+        }
+        _pendingOfflineRemoveHint = removeOk && !wasLocallyOnline;
       }
 
       setState(() {
@@ -1642,7 +1673,8 @@ class _HomePageState extends State<HomePage>
       // 更新设备列表，确保UI反映最新的状态
       await _updateDeviceList();
 
-      _showDeviceRemovedMessage();
+      _showDeviceRemovedMessage(offlineNeedPairing: _pendingOfflineRemoveHint);
+      _pendingOfflineRemoveHint = false;
     } finally {
       _disconnectingIds.remove(bluetoothId);
     }
@@ -1677,9 +1709,15 @@ class _HomePageState extends State<HomePage>
     _showStatusMessageWithAnimation(l10n.connectedToDevice(deviceName, side));
   }
 
-  void _showDeviceRemovedMessage() {
+  void _showDeviceRemovedMessage({bool offlineNeedPairing = false}) {
+    final l10n = AppLocalizations.of(context)!;
     _showStatusMessageWithAnimation(
-      AppLocalizations.of(context)!.deviceRemoved,
+      offlineNeedPairing
+          ? l10n.deviceRemovedOfflineNeedPairing
+          : l10n.deviceRemoved,
+      duration: offlineNeedPairing
+          ? const Duration(seconds: 6)
+          : const Duration(seconds: 3),
     );
   }
 

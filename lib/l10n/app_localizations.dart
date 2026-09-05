@@ -332,6 +332,12 @@ abstract class AppLocalizations {
   /// **'Device removed'**
   String get deviceRemoved;
 
+  /// Message after removing a device that was offline
+  ///
+  /// In en, this message translates to:
+  /// **'Device unbound from the cloud. Offline remove does not reset the pump. Put it in pairing mode and search again.'**
+  String get deviceRemovedOfflineNeedPairing;
+
   /// Message when devices are found
   ///
   /// In en, this message translates to:
