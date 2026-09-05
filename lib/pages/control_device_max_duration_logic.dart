@@ -21,8 +21,10 @@ class ControlDeviceMaxDurationLogic {
     return (left: left, right: maxTime);
   }
 
-  /// Clears firmware maxTime for a side that stopped.  When the other side
-  /// is also idle, both values are cleared so the next session reads UI max.
+  /// Clears firmware maxTime only when both sides are idle so the next
+  /// session reads the UI max.  While the other side is still running the
+  /// stopped side's last report is kept — otherwise the Both card would
+  /// fall through to the remaining side (e.g. show 20 after a 15-min end).
   static ({int? left, int? right}) clearOnStop({
     required bool isLeftDevice,
     required bool otherSideRunning,
@@ -32,15 +34,13 @@ class ControlDeviceMaxDurationLogic {
     if (!otherSideRunning) {
       return (left: null, right: null);
     }
-    if (isLeftDevice) {
-      return (left: null, right: right);
-    }
-    return (left: left, right: null);
+    return (left: left, right: right);
   }
 
   /// Firmware maxTime shown on the timer card for the current selection.
-  /// Both mode prefers left (same as the unified time display) and falls
-  /// back to right when left has not reported.
+  /// Both prefers left (same as the unified time display) and falls back
+  /// to right.  When the two sides disagree, returns null so the card
+  /// uses the UI dropdown value instead of mixing 15 and 20.
   static int? displayDeviceMaxDuration({
     required PumpSelection selected,
     required int? left,
@@ -52,6 +52,9 @@ class ControlDeviceMaxDurationLogic {
       case PumpSelection.right:
         return right;
       case PumpSelection.both:
+        if (left != null && right != null && left != right) {
+          return null;
+        }
         return left ?? right;
     }
   }

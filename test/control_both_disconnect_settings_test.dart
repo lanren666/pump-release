@@ -5,6 +5,7 @@ import 'package:pump/pages/control_navigation_resume_logic.dart';
 import 'package:pump/pages/control_session_settings_sync_logic.dart';
 import 'package:pump/pages/control_timer_display_logic.dart';
 import 'package:pump/pages/control_types.dart';
+import 'package:pump/services/tuya/both_sync_diagnostics.dart';
 
 /// End-to-end chaining of the pure helpers that used to produce the
 /// 2026-09-02 Both-disconnect bug:
@@ -96,6 +97,15 @@ void main() {
         ),
         20,
       );
+      expect(
+        ControlDeviceMaxDurationLogic.displayDeviceMaxDuration(
+          selected: PumpSelection.both,
+          left: firmware.left,
+          right: firmware.right,
+        ),
+        isNull,
+        reason: 'Both card falls back to UI max instead of mixing 15 and 20',
+      );
     });
 
     test('left natural end at 15 is not kicked just because right reports 20', () {
@@ -124,6 +134,28 @@ void main() {
           uiMaxDuration: 15,
         ),
         isFalse,
+      );
+    });
+
+    test('single-side BLE drop with frozen time must not count as Both desync', () {
+      expect(
+        BothSyncDiagnostics.failReason(
+          leftAlive: true,
+          rightAlive: false,
+          leftLinked: true,
+          rightLinked: false,
+          leftMode: 'expression',
+          rightMode: 'expression',
+          leftPhase: 2,
+          rightPhase: 2,
+          leftTotalSec: 8 * 60 + 32,
+          rightTotalSec: 6 * 60 + 27,
+          leftPhaseSec: 200,
+          rightPhaseSec: 267,
+          thresholdSec: 30,
+        ),
+        isNull,
+        reason: '08:32 vs frozen 06:27 during a right-side drop is not individual-mode',
       );
     });
 

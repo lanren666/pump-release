@@ -57,14 +57,14 @@ void main() {
   });
 
   group('clearOnStop', () {
-    test('other side still running → only the stopped side is cleared', () {
+    test('other side still running → keep both last reports', () {
       final next = ControlDeviceMaxDurationLogic.clearOnStop(
         isLeftDevice: true,
         otherSideRunning: true,
         left: 15,
         right: 20,
       );
-      expect(next.left, isNull);
+      expect(next.left, 15);
       expect(next.right, 20);
     });
 
@@ -79,7 +79,7 @@ void main() {
       expect(next.right, isNull);
     });
 
-    test('right stops while left still running → keep left', () {
+    test('right stops while left still running → keep both', () {
       final next = ControlDeviceMaxDurationLogic.clearOnStop(
         isLeftDevice: false,
         otherSideRunning: true,
@@ -87,7 +87,7 @@ void main() {
         right: 20,
       );
       expect(next.left, 15);
-      expect(next.right, isNull);
+      expect(next.right, 20);
     });
   });
 
@@ -111,14 +111,25 @@ void main() {
       );
     });
 
-    test('Both prefers left and falls back to right', () {
+    test('Both with matching values prefers that value', () {
+      expect(
+        ControlDeviceMaxDurationLogic.displayDeviceMaxDuration(
+          selected: PumpSelection.both,
+          left: 15,
+          right: 15,
+        ),
+        15,
+      );
+    });
+
+    test('Both with disagreed 15 vs 20 falls back to UI (null)', () {
       expect(
         ControlDeviceMaxDurationLogic.displayDeviceMaxDuration(
           selected: PumpSelection.both,
           left: 15,
           right: 20,
         ),
-        15,
+        isNull,
       );
       expect(
         ControlDeviceMaxDurationLogic.displayDeviceMaxDuration(
