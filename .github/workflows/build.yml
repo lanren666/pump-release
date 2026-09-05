@@ -152,6 +152,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -159,12 +160,14 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+          cache-key: flutter-${{ env.FLUTTER_VERSION }}-${{ hashFiles('pubspec.lock') }}
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r27
           link-to-sdk: true
+          local-cache: true
 
       - name: Restore Android signing
         env:
@@ -230,14 +233,30 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+          cache-key: flutter-${{ env.FLUTTER_VERSION }}-${{ hashFiles('pubspec.lock') }}
 
       - name: Flutter pub get
         run: flutter pub get
 
+      - name: Cache CocoaPods
+        id: pods-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ios/Pods
+            ~/Library/Caches/CocoaPods
+          key: pods-${{ runner.os }}-${{ hashFiles('ios/Podfile.lock', 'pubspec.lock') }}
+          restore-keys: |
+            pods-${{ runner.os }}-
+
       - name: Install CocoaPods
         run: |
           cd ios
-          pod install --repo-update
+          if [ "${{ steps.pods-cache.outputs.cache-hit }}" = "true" ]; then
+            pod install
+          else
+            pod install --repo-update
+          fi
 
       - name: Build iOS debug (unsigned)
         run: |
@@ -307,10 +326,21 @@ jobs:
           name: ${{ needs.prepare.outputs.artifact_prefix }}-ios
           path: dist
 
+      - name: Cache ossutil
+        id: ossutil-cache
+        uses: actions/cache@v4
+        with:
+          path: ossutil64
+          key: ossutil-1.7.16-linux
+
       - name: Download ossutil
+        if: ${{ steps.ossutil-cache.outputs.cache-hit != 'true' }}
         run: |
           curl -L https://gosspublic.alicdn.com/ossutil/1.7.16/ossutil64 -o ossutil64
           chmod +x ossutil64
+
+      - name: Make ossutil executable
+        run: chmod +x ossutil64
 
       - name: Configure ossutil
         env:
@@ -327,19 +357,40 @@ jobs:
       - name: Upload packages to OSS
         env:
           CHANNEL: ${{ needs.prepare.outputs.channel }}
+          BUILD_NAME: ${{ needs.prepare.outputs.build_name }}
           OSS_DIR: ${{ needs.prepare.outputs.oss_dir }}
           OSS_APK: ${{ needs.prepare.outputs.oss_apk }}
           OSS_IPA: ${{ needs.prepare.outputs.oss_ipa }}
         run: |
           set -euo pipefail
           dest="oss://${OSS_BUCKET}/${OSS_DIR}"
+
+          oss_exists() {
+            ./ossutil64 stat "$1" >/dev/null 2>&1
+          }
+
+          remote_apk="${OSS_APK}"
+          remote_ipa="${OSS_IPA}"
+          if [ "${CHANNEL}" = "snapshot" ]; then
+            base="SporraMom-v${BUILD_NAME}-SNAPSHOT"
+            if oss_exists "${dest}/${base}.apk" || oss_exists "${dest}/${base}.ipa"; then
+              n=1
+              while oss_exists "${dest}/${base}${n}.apk" || oss_exists "${dest}/${base}${n}.ipa"; do
+                n=$((n + 1))
+              done
+              remote_apk="${base}${n}.apk"
+              remote_ipa="${base}${n}.ipa"
+            fi
+            echo "Snapshot OSS names: ${remote_apk} ${remote_ipa}"
+          fi
+
           if [ -f "dist/${OSS_APK}" ]; then
-            ./ossutil64 cp "dist/${OSS_APK}" "${dest}/${OSS_APK}" --force
-            echo "Uploaded ${dest}/${OSS_APK}"
+            ./ossutil64 cp "dist/${OSS_APK}" "${dest}/${remote_apk}" --force
+            echo "Uploaded ${dest}/${remote_apk}"
           fi
           if [ -f "dist/${OSS_IPA}" ]; then
-            ./ossutil64 cp "dist/${OSS_IPA}" "${dest}/${OSS_IPA}" --force
-            echo "Uploaded ${dest}/${OSS_IPA}"
+            ./ossutil64 cp "dist/${OSS_IPA}" "${dest}/${remote_ipa}" --force
+            echo "Uploaded ${dest}/${remote_ipa}"
           fi
           ./ossutil64 ls "${dest}/"
 
