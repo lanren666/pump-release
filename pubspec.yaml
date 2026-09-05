@@ -23,7 +23,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 #   <number>   — monotonically increasing build number; bump every packaged build
 #                (required for new Android builds on Play; keep increasing for iOS/TF).
 #   Optional per-build override (does not change pubspec): see flutter build --build-name / --build-number
-version: 1.0.1+0
+version: 1.1.1+1
 
 environment:
   sdk: ^3.8.1
