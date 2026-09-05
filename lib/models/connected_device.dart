@@ -7,6 +7,7 @@ class ConnectedDevice {
   final String position; // 位置：left/right
   final bool isRunning; // 运行中：是or否
   final bool isRemembered; // 是否已配网
+  final String? productKey; // Tuya productId used by iOS connectBLE
 
   ConnectedDevice({
     this.id,
@@ -17,6 +18,7 @@ class ConnectedDevice {
     this.position = 'left',
     this.isRunning = false,
     this.isRemembered = false,
+    this.productKey,
   });
 
   Map<String, dynamic> toMap() {
@@ -29,10 +31,12 @@ class ConnectedDevice {
       'position': position,
       'is_running': isRunning ? 1 : 0,
       'is_remembered': isRemembered ? 1 : 0,
+      'product_key': productKey ?? '',
     };
   }
 
   factory ConnectedDevice.fromMap(Map<String, dynamic> map) {
+    final rawKey = map['product_key'] as String?;
     return ConnectedDevice(
       id: map['id'],
       bluetoothId: map['bluetooth_id'],
@@ -42,6 +46,7 @@ class ConnectedDevice {
       position: map['position'],
       isRunning: map['is_running'] == 1,
       isRemembered: map['is_remembered'] == 1,
+      productKey: (rawKey != null && rawKey.isNotEmpty) ? rawKey : null,
     );
   }
 
@@ -54,6 +59,7 @@ class ConnectedDevice {
     String? position,
     bool? isRunning,
     bool? isRemembered,
+    String? productKey,
   }) {
     return ConnectedDevice(
       id: id ?? this.id,
@@ -64,6 +70,7 @@ class ConnectedDevice {
       position: position ?? this.position,
       isRunning: isRunning ?? this.isRunning,
       isRemembered: isRemembered ?? this.isRemembered,
+      productKey: productKey ?? this.productKey,
     );
   }
 }

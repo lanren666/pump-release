@@ -257,6 +257,10 @@ class MainActivity : FlutterActivity(), LocationListener {
                     handleAddHome(call, result)
                 }
 
+                "refreshHomeData" -> {
+                    handleRefreshHomeData(result)
+                }
+
                 "startScan" -> {
                     android.util.Log.d("MainActivity", "🔄 Processing startScan request...")
                     if (isScanning) {
@@ -658,6 +662,34 @@ class MainActivity : FlutterActivity(), LocationListener {
                         "❌ 获取家庭列表失败: code=$errorCode, error=$error"
                     )
                     result.error("GET_HOME_LIST_FAILED", error, null)
+                }
+            }
+        )
+    }
+
+    private fun handleRefreshHomeData(result: MethodChannel.Result) {
+        ThingHomeSdk.getHomeManagerInstance().queryHomeList(
+            object : IThingGetHomeListCallback {
+                override fun onSuccess(homeBeans: List<HomeBean>) {
+                    if (homeBeans.isEmpty()) {
+                        result.success(false)
+                        return
+                    }
+                    collectDevicesFromHomes(homeBeans, 0, mutableListOf()) { devices ->
+                        android.util.Log.d(
+                            "MainActivity",
+                            "refreshHomeData homes=${homeBeans.size} devices=${devices.size}"
+                        )
+                        result.success(true)
+                    }
+                }
+
+                override fun onError(errorCode: String, error: String) {
+                    android.util.Log.w(
+                        "MainActivity",
+                        "refreshHomeData failed: code=$errorCode error=$error"
+                    )
+                    result.success(false)
                 }
             }
         )

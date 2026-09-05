@@ -38,6 +38,7 @@ extension Date {
     
     // 家庭实例，用于监听 DPS 更新
     private var home: ThingSmartHome?
+    private let preferredHomeIdKey = "tuya_preferred_home_id"
 
     // 位置信息
     private var currentLatitude: Double = 0.0
@@ -50,6 +51,26 @@ extension Date {
 
     // 扫描到的设备信息映射（uuid -> ThingBLEAdvModel）
     private var scannedDevices: [String: ThingBLEAdvModel] = [:]
+
+    /// Debug-only reconnect tracer. Grep flutter/Xcode logs for [BLE_REPRO].
+    private func reproLog(_ msg: String) {
+        let line = "[BLE_REPRO] \(msg)"
+        print(line)
+        NSLog("%@", line)
+    }
+
+    private func currentBluetoothStateString() -> String {
+        guard let state = centralManager?.state else { return "nil" }
+        switch state {
+        case .unknown: return "unknown"
+        case .resetting: return "resetting"
+        case .unsupported: return "unsupported"
+        case .unauthorized: return "unauthorized"
+        case .poweredOff: return "poweredOff"
+        case .poweredOn: return "poweredOn"
+        @unknown default: return "unknown"
+        }
+    }
 
     override func application(
         _ application: UIApplication,
@@ -217,6 +238,7 @@ extension Date {
         sdk.start(withAppKey: appKey, secretKey: secretKey)
         bleManager = ThingSmartBLEManager.sharedInstance()
         homeManager = ThingSmartHomeManager()
+        homeManager?.delegate = self
 
         if bleManager != nil {
             print("ThingSmartApp: ✓ SDK initialized")
@@ -238,57 +260,23 @@ extension Date {
     /// 在应用变为活跃状态时，确保 home delegate 仍然有效
     override func applicationDidBecomeActive(_ application: UIApplication) {
         super.applicationDidBecomeActive(application)
-        // 重新确保 home delegate 设置
-        getFirstHome { [weak self] homeModel in
-            guard let self = self, let homeModel = homeModel else {
-                return
-            }
-            self.ensureHomeDelegate(homeId: homeModel.homeId)
-        }
+        // Official: MQTT drops in background; refresh home details on foreground.
+        refreshCurrentHomeData()
     }
     
     // MARK: - Home Initialization
     /// 初始化家庭并设置 delegate 来监听 DPS 更新
     private func initHome() {
-        getFirstHome { [weak self] homeModel in
+        getPreferredHome { [weak self] homeModel in
             guard let self = self, let homeModel = homeModel else {
                 print("⚠️ 未找到家庭，无法初始化 DPS 监听")
                 return
             }
-            
+
             let homeId = homeModel.homeId
             self.ensureHomeDelegate(homeId: homeId)
             print("✅ 已初始化家庭 DPS 监听: homeId=\(homeId)")
-            
-            // 打印设备信息以便调试
-            if let deviceList = self.home?.deviceList {
-                print("📱 当前家庭设备列表: \(deviceList.count) 个设备")
-                for device in deviceList {
-                    let devId = device.devId ?? "unknown"
-                    let uuid = device.uuid ?? "unknown"
-                    let deviceName = device.name ?? "unknown"
-                    print("  - 设备 devId: \(devId), uuid: \(uuid), 名称: \(deviceName), 在线: \(device.isOnline)")
-
-                    // 发送设备激活事件到 Flutter 端，用于更新 available device 的 devId
-                    // deviceId 对应 bluetoothId (即 uuid)，devId 对应设备的 devId
-                    if uuid != "unknown" && devId != "unknown" {
-                        let eventData: [String: Any] = [
-                            "type": "deviceActivated",
-                            "deviceId": uuid,
-                            "devId": devId
-                        ]
-
-                        do {
-                            let jsonData = try JSONSerialization.data(withJSONObject: eventData)
-                            let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
-                            self.connectionEventSink?(jsonString)
-                            print("📤 已发送设备激活事件: uuid=\(uuid), devId=\(devId)")
-                        } catch {
-                            print("❌ 编码设备激活事件失败: \(error)")
-                        }
-                    }
-                }
-            }
+            self.fetchHomeDeviceList(homeId: homeId) { _ in }
         }
     }
     
@@ -319,16 +307,6 @@ extension Date {
         self.home = ThingSmartHome(homeId: homeId)
         self.home?.delegate = self
         print("✅ Home 实例已创建并设置 delegate: homeId=\(homeId)")
-        
-        // 重要：必须先调用 getDetailWithSuccess，否则无法成功获取设备列表（根据文档要求）
-        self.home?.getDetailWithSuccess({ [weak self] _ in
-            print("✅ Home 详细信息已获取，设备列表已更新: homeId=\(homeId)")
-            if let deviceList = self?.home?.deviceList {
-                print("📱 当前家庭设备列表: \(deviceList.count) 个设备")
-            }
-        }, failure: { (error: Error?) in
-            print("⚠️ 获取 Home 详细信息失败: \(error?.localizedDescription ?? "unknown")")
-        })
     }
     
     /// 刷新 home 设备列表（设备激活后调用，确保新设备能被识别）
@@ -336,18 +314,10 @@ extension Date {
         ensureHomeDelegate(homeId: homeId)
         
         // 如果 home 已存在，需要刷新设备列表以包含新激活的设备
-        if let home = self.home {
-            home.getDetailWithSuccess({ [weak self] _ in
-                print("✅ Home 设备列表已刷新（设备激活后）")
-                if let deviceList = self?.home?.deviceList {
-                    print("📱 当前家庭设备列表: \(deviceList.count) 个设备")
-                }
+        if self.home != nil {
+            fetchHomeDeviceList(homeId: homeId) { _ in
                 completion()
-            }, failure: { (error: Error?) in
-                print("⚠️ 刷新 Home 设备列表失败: \(error?.localizedDescription ?? "unknown")")
-                // 即使失败也继续执行
-                completion()
-            })
+            }
         } else {
             // 如果 home 不存在，直接执行 completion
             completion()
@@ -522,6 +492,8 @@ extension Date {
                 self.handleGetHomeList(result: result)
             case "addHome":
                 self.handleAddHome(call: call, result: result)
+            case "refreshHomeData":
+                self.handleRefreshHomeData(result: result)
             case "startScan":
                 print("🔄 Processing startScan request...")
                 if self.isScanning {
@@ -584,6 +556,8 @@ extension Date {
                 self.handleRemoveDevice(call: call, result: result)
             case "registerDeviceListener":
                 self.handleRegisterDeviceListener(call: call, result: result)
+            case "disconnectBleDevice":
+                self.handleDisconnectBleDevice(call: call, result: result)
             case "resetBleActivationState":
                 self.handleResetBleActivationState(result: result)
             default:
@@ -726,6 +700,7 @@ extension Date {
 
         manager.addHome(withName: homeName, geoName: geoName, rooms: rooms, latitude: latitude, longitude: longitude, success: { [weak self] homeId in
             print("✅ 创建家庭成功: homeId=\(homeId)")
+            self?.persistPreferredHomeId(homeId)
             // 创建家庭成功后，确保 home delegate 设置
             self?.ensureHomeDelegate(homeId: homeId)
             result(String(homeId))
@@ -841,6 +816,9 @@ extension Date {
             homeId = homeIdNumber
         } else {
             homeId = nil
+        }
+        if let homeId {
+            persistPreferredHomeId(homeId.int64Value)
         }
 
         // Dart DB-stored devId — non-empty means the device is already paired.
@@ -1059,32 +1037,37 @@ extension Date {
             return
         }
 
-        // 检查设备是否在线（本地BLE连接）
+        let bluetoothId = args["bluetoothId"] as? String ?? ""
+
+        // Official online check for BLE is local deviceStatue, not cloud isOnline.
         guard let bleManager = bleManager else {
+            reproLog("isDeviceOnline bleManager=nil id=\(deviceId)")
             result(false)
             return
         }
 
-        // 通过Home Manager获取设备信息（包含UUID）
+        if !bluetoothId.isEmpty {
+            let isBleOnline = bleManager.deviceStatue(withUUID: bluetoothId)
+            reproLog(
+                "isDeviceOnline localBle id=\(deviceId) uuid=\(bluetoothId) bleOnline=\(isBleOnline)"
+            )
+            result(isBleOnline)
+            return
+        }
+
         getDevice(deviceId: deviceId) { device in
             guard let device = device, let uuid = device.uuid else {
+                self.reproLog("isDeviceOnline device_not_in_home id=\(deviceId)")
                 result(false)
                 return
             }
 
-            // 使用 deviceStatueWithUUID 方法查询蓝牙是否本地连接
             let isBleOnline = bleManager.deviceStatue(withUUID: uuid)
-
-            // 如果是双模设备，需要结合 ThingSmartDeviceModel 的 isOnline 判断
-            if device.isOnline {
-                // 设备在线（可能是蓝牙或Wi-Fi）
-                // 如果 isBleOnline 为 true，说明是蓝牙在线
-                // 如果 isBleOnline 为 false，说明是 Wi-Fi 在线
-                result(isBleOnline)
-            } else {
-                // 设备完全离线
-                result(false)
-            }
+            self.reproLog(
+                "isDeviceOnline id=\(deviceId) uuid=\(uuid) cloudOnline=\(device.isOnline) " +
+                    "bleOnline=\(isBleOnline) reported=\(isBleOnline)"
+            )
+            result(isBleOnline)
         }
     }
 
@@ -1096,9 +1079,12 @@ extension Date {
             return
         }
 
+        let dartBluetoothIds = args["bluetoothIds"] as? [String: String] ?? [:]
         print("🔍 批量检查设备在线状态: \(deviceIds)")
+        reproLog("checkDevicesOnline enter ids=\(deviceIds) bt=\(currentBluetoothStateString())")
 
         guard let bleManager = bleManager else {
+            reproLog("checkDevicesOnline bleManager=nil")
             result([String: Bool]())
             return
         }
@@ -1108,13 +1094,28 @@ extension Date {
 
         for deviceId in deviceIds {
             group.enter()
+            let dartUuid = dartBluetoothIds[deviceId] ?? ""
+            if !dartUuid.isEmpty {
+                let isBleOnline = bleManager.deviceStatue(withUUID: dartUuid)
+                onlineStatusMap[deviceId] = isBleOnline
+                self.reproLog(
+                    "checkOnline localBle id=\(deviceId) uuid=\(dartUuid) bleOnline=\(isBleOnline)"
+                )
+                group.leave()
+                continue
+            }
             getDevice(deviceId: deviceId) { device in
                 if let device = device, let uuid = device.uuid {
                     let isBleOnline = bleManager.deviceStatue(withUUID: uuid)
-                    onlineStatusMap[deviceId] = device.isOnline ? isBleOnline : false
-                    print("  设备 \(deviceId) 在线状态: \(onlineStatusMap[deviceId] ?? false)")
+                    onlineStatusMap[deviceId] = isBleOnline
+                    self.reproLog(
+                        "checkOnline id=\(deviceId) uuid=\(uuid) cloudOnline=\(device.isOnline) " +
+                            "bleOnline=\(isBleOnline) reported=\(isBleOnline)"
+                    )
+                    print("  设备 \(deviceId) 在线状态: \(isBleOnline)")
                 } else {
                     onlineStatusMap[deviceId] = false
+                    self.reproLog("checkOnline id=\(deviceId) device_not_in_home")
                 }
                 group.leave()
             }
@@ -1133,50 +1134,219 @@ extension Date {
             return
         }
 
+        let dartBluetoothIds = args["bluetoothIds"] as? [String: String] ?? [:]
+        let dartProductKeys = args["productKeys"] as? [String: String] ?? [:]
         print("🔗 批量连接设备: \(deviceIds)")
+        reproLog(
+            "connectBleDevices enter ids=\(deviceIds) bt=\(currentBluetoothStateString()) " +
+                "scanning=\(isScanning) scanCacheCount=\(scannedDevices.count)"
+        )
 
         guard let bleManager = bleManager else {
+            reproLog("connectBleDevices bleManager=nil")
             result(FlutterError(code: "SDK_ERROR", message: "BLE manager not available", details: nil))
             return
         }
 
-        var connectionResults: [String: Bool] = [:]
+        var connectionResults: [String: Any] = [:]
+        var reproReasons: [String: String] = [:]
         let group = DispatchGroup()
 
         for deviceId in deviceIds {
             group.enter()
             updateConnectionState(deviceId: deviceId, state: "connecting")
 
+            var dartUuid = dartBluetoothIds[deviceId] ?? ""
+            var dartProductKey = dartProductKeys[deviceId] ?? ""
+            var localSource = "dartLocal"
+            if dartProductKey.isEmpty || dartUuid.isEmpty,
+               let sdkDevice = ThingSmartDevice(deviceId: deviceId) {
+                let model = sdkDevice.deviceModel
+                if dartUuid.isEmpty, let uuid = model.uuid, !uuid.isEmpty {
+                    dartUuid = uuid
+                    localSource = "sdkCache"
+                }
+                if dartProductKey.isEmpty, let productKey = model.productId, !productKey.isEmpty {
+                    dartProductKey = productKey
+                    localSource = dartUuid.isEmpty ? "sdkCache" : "dartUuid+sdkProductKey"
+                }
+            }
+
+            // Official connectBLE(uuid, productKey) does not require home.deviceList.
+            if !dartUuid.isEmpty && !dartProductKey.isEmpty {
+                startConnectBLE(
+                    bleManager: bleManager,
+                    deviceId: deviceId,
+                    uuid: dartUuid,
+                    productKey: dartProductKey,
+                    source: localSource,
+                    delegateDevId: deviceId,
+                    onDone: { success, reason in
+                        connectionResults[deviceId] = success
+                        reproReasons[deviceId] = reason
+                        group.leave()
+                    }
+                )
+                continue
+            }
+
             getDevice(deviceId: deviceId) { [weak self] device in
-                guard let self = self,
-                      let device = device,
-                      let uuid = device.uuid,
-                      let productKey = device.productId
-                else {
+                guard let self = self else {
                     connectionResults[deviceId] = false
-                    self?.updateConnectionState(deviceId: deviceId, state: "disconnected")
                     group.leave()
                     return
                 }
 
-                let delegateDevId = device.devId ?? deviceId
-                bleManager.connectBLE(withUUID: uuid, productKey: productKey, success: {
-                    print("✅ 设备连接成功: \(deviceId)")
-                    self.updateConnectionState(deviceId: deviceId, state: "connected")
-                    self.setupDeviceDelegate(deviceId: delegateDevId)
-                    connectionResults[deviceId] = true
-                    group.leave()
-                }, failure: {
-                    print("❌ 设备连接失败: \(deviceId)")
-                    self.updateConnectionState(deviceId: deviceId, state: "disconnected")
+                let resolved = self.resolveConnectIdentity(
+                    deviceId: deviceId,
+                    homeDevice: device,
+                    dartBluetoothId: dartBluetoothIds[deviceId],
+                    dartProductKey: dartProductKeys[deviceId]
+                )
+                let uuid = resolved.uuid
+                let productKey = resolved.productKey
+                let cacheNote: String
+                if uuid.isEmpty {
+                    cacheNote = "scanCache=n/a"
+                } else if let adv = self.scannedDevices[uuid] {
+                    cacheNote = "scanCache=hit isActive=\(adv.isActive)"
+                } else {
+                    cacheNote = "scanCache=miss"
+                }
+
+                if uuid.isEmpty || productKey.isEmpty {
+                    let detail =
+                        "unresolved source=\(resolved.source) homeFound=\(device != nil) " +
+                        "uuid=\(uuid.isEmpty ? "nil" : uuid) " +
+                        "productKey=\(productKey.isEmpty ? "nil" : productKey) \(cacheNote)"
+                    self.reproLog("connectBleDevices skip id=\(deviceId) \(detail)")
                     connectionResults[deviceId] = false
+                    reproReasons[deviceId] = detail
+                    self.updateConnectionState(deviceId: deviceId, state: "disconnected")
                     group.leave()
-                })
+                    return
+                }
+
+                self.startConnectBLE(
+                    bleManager: bleManager,
+                    deviceId: deviceId,
+                    uuid: uuid,
+                    productKey: productKey,
+                    source: resolved.source,
+                    delegateDevId: device?.devId ?? deviceId,
+                    onDone: { success, reason in
+                        connectionResults[deviceId] = success
+                        reproReasons[deviceId] = reason
+                        group.leave()
+                    }
+                )
             }
         }
 
         group.notify(queue: .main) {
+            connectionResults["_repro"] = reproReasons
+            self.reproLog("connectBleDevices result \(reproReasons)")
             result(connectionResults)
+        }
+    }
+
+    private func startConnectBLE(
+        bleManager: ThingSmartBLEManager,
+        deviceId: String,
+        uuid: String,
+        productKey: String,
+        source: String,
+        delegateDevId: String,
+        onDone: @escaping (Bool, String) -> Void
+    ) {
+        let cacheNote: String
+        if let adv = scannedDevices[uuid] {
+            cacheNote = "scanCache=hit isActive=\(adv.isActive)"
+        } else {
+            cacheNote = "scanCache=miss"
+        }
+        reproLog(
+            "connectBleDevices connectBLE start id=\(deviceId) uuid=\(uuid) " +
+                "productKey=\(productKey) source=\(source) \(cacheNote) " +
+                "bt=\(currentBluetoothStateString()) scanning=\(isScanning)"
+        )
+        let startedAt = Date()
+        bleManager.connectBLE(withUUID: uuid, productKey: productKey, success: { [weak self] in
+            let ms = Int(Date().timeIntervalSince(startedAt) * 1000)
+            print("✅ 设备连接成功: \(deviceId)")
+            self?.reproLog(
+                "connectBleDevices connectBLE success id=\(deviceId) uuid=\(uuid) elapsedMs=\(ms)"
+            )
+            self?.updateConnectionState(deviceId: deviceId, state: "connected")
+            self?.setupDeviceDelegate(deviceId: delegateDevId)
+            onDone(true, "success source=\(source) elapsedMs=\(ms)")
+        }, failure: { [weak self] in
+            let ms = Int(Date().timeIntervalSince(startedAt) * 1000)
+            print("❌ 设备连接失败: \(deviceId)")
+            self?.reproLog(
+                "connectBleDevices connectBLE failure id=\(deviceId) uuid=\(uuid) elapsedMs=\(ms)"
+            )
+            self?.updateConnectionState(deviceId: deviceId, state: "disconnected")
+            onDone(false, "connectBLE_failure source=\(source) elapsedMs=\(ms)")
+        })
+    }
+
+    private func handleDisconnectBleDevice(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any] else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "deviceId or uuid is required", details: nil))
+            return
+        }
+        let deviceId = args["deviceId"] as? String ?? ""
+        let uuidArg = args["uuid"] as? String ?? ""
+
+        let finishDisconnect: (String, String?) -> Void = { [weak self] uuid, resolvedDevId in
+            guard let self = self else {
+                result(false)
+                return
+            }
+            print("🔌 debug disconnectBleDevice input=\(deviceId) uuid=\(uuid)")
+            ThingSmartBLEManager.sharedInstance().disconnectBLE(
+                withUUID: uuid,
+                success: {
+                    self.updateConnectionState(deviceId: deviceId, state: "disconnected")
+                    if !uuid.isEmpty, uuid != deviceId {
+                        self.updateConnectionState(deviceId: uuid, state: "disconnected")
+                    }
+                    if let devId = resolvedDevId, !devId.isEmpty, devId != deviceId {
+                        self.updateConnectionState(deviceId: devId, state: "disconnected")
+                    }
+                    result(true)
+                },
+                failure: { error in
+                    let errorMsg = error?.localizedDescription ?? "disconnect failed"
+                    print("❌ debug disconnectBleDevice failed: \(errorMsg)")
+                    result(FlutterError(code: "DISCONNECT_FAILED", message: errorMsg, details: nil))
+                }
+            )
+        }
+
+        // Flutter bluetoothId is the BLE uuid; prefer it so home lookup is not required.
+        if !uuidArg.isEmpty {
+            finishDisconnect(uuidArg, deviceId.isEmpty ? nil : deviceId)
+            return
+        }
+
+        getDevice(deviceId: deviceId) { [weak self] device in
+            if let uuid = device?.uuid, !uuid.isEmpty {
+                finishDisconnect(uuid, device?.devId)
+                return
+            }
+            self?.getDeviceByUuid(uuid: deviceId) { byUuid in
+                if let uuid = byUuid?.uuid, !uuid.isEmpty {
+                    finishDisconnect(uuid, byUuid?.devId)
+                    return
+                }
+                result(FlutterError(
+                    code: "DEVICE_NOT_FOUND",
+                    message: "Device uuid not found",
+                    details: ["deviceId": deviceId]
+                ))
+            }
         }
     }
 
@@ -1221,44 +1391,39 @@ extension Date {
             return
         }
 
-        print("📝 Flutter 请求注册设备监听器: deviceId=\(deviceId)")
+        let bluetoothId = args["bluetoothId"] as? String ?? ""
+        print("📝 Flutter 请求注册设备监听器: deviceId=\(deviceId) bluetoothId=\(bluetoothId)")
 
-        // 检查设备是否在线
         guard let bleManager = bleManager else {
             result(FlutterError(code: "SDK_ERROR", message: "BLE manager not available", details: nil))
             return
         }
 
-        // 从 home 的设备列表中通过 uuid (bluetoothId) 查找对应的设备
-        // Flutter 端传入的 deviceId 实际上是 bluetoothId (uuid)
-        getDeviceByUuid(uuid: deviceId) { [weak self] deviceModel in
-            guard let self = self else {
-                result(FlutterError(code: "INTERNAL_ERROR", message: "Self is nil", details: nil))
+        // Official: ThingSmartDevice(deviceId:) + delegate. Do not require home.deviceList.
+        if let sdkDevice = ThingSmartDevice(deviceId: deviceId) {
+            let resolvedDevId = sdkDevice.deviceModel.devId ?? deviceId
+            if !resolvedDevId.isEmpty {
+                let uuid = bluetoothId.isEmpty
+                    ? (sdkDevice.deviceModel.uuid ?? "")
+                    : bluetoothId
+                if !uuid.isEmpty && !bleManager.deviceStatue(withUUID: uuid) {
+                    reproLog(
+                        "registerDeviceListener attach anyway offline id=\(deviceId) " +
+                            "devId=\(resolvedDevId) uuid=\(uuid)"
+                    )
+                }
+                setupDeviceDelegate(deviceId: resolvedDevId)
+                print("✅ 设备监听器注册成功: deviceId=\(deviceId), devId=\(resolvedDevId)")
+                result(nil)
                 return
             }
-
-            guard let device = deviceModel,
-                  let uuid = device.uuid,
-                  let devId = device.devId
-            else {
-                print("⚠️ 未找到设备信息: deviceId=\(deviceId)")
-                result(FlutterError(code: "DEVICE_NOT_FOUND", message: "Device not found", details: nil))
-                return
-            }
-
-            // 检查设备是否在线（本地BLE连接）
-            let isBleOnline = bleManager.deviceStatue(withUUID: uuid)
-            if !device.isOnline || !isBleOnline {
-                print("⚠️ 设备未在线，无法注册监听器: deviceId=\(deviceId), devId=\(devId), isOnline=\(device.isOnline), isBleOnline=\(isBleOnline)")
-                result(FlutterError(code: "DEVICE_OFFLINE", message: "Device is not online", details: nil))
-                return
-            }
-
-            // 注册监听器（使用 devId）
-            self.setupDeviceDelegate(deviceId: devId)
-            print("✅ 设备监听器注册成功: deviceId=\(deviceId), devId=\(devId)")
-            result(nil)
         }
+
+        result(FlutterError(
+            code: "DEVICE_NOT_FOUND",
+            message: "ThingSmartDevice not found",
+            details: ["deviceId": deviceId, "bluetoothId": bluetoothId]
+        ))
     }
 
     // MARK: - DP Handlers
@@ -1522,31 +1687,171 @@ extension Date {
     }
 
     // MARK: - Helper Methods
+    private func persistPreferredHomeId(_ homeId: Int64) {
+        guard homeId > 0 else { return }
+        UserDefaults.standard.set(NSNumber(value: homeId), forKey: preferredHomeIdKey)
+        reproLog("persistPreferredHomeId \(homeId)")
+    }
+
+    private func storedPreferredHomeId() -> Int64? {
+        guard let value = UserDefaults.standard.object(forKey: preferredHomeIdKey) as? NSNumber else {
+            return nil
+        }
+        let homeId = value.int64Value
+        return homeId > 0 ? homeId : nil
+    }
+
+    private func bindHomeManagerDelegate(_ manager: ThingSmartHomeManager) {
+        if manager.delegate !== self {
+            manager.delegate = self
+        }
+    }
+
+    /// Official: wait until home cache is ready (or skip if not started), then query the cloud list.
+    private func waitLoadCacheThen(_ work: @escaping () -> Void) {
+        let manager = homeManager ?? ThingSmartHomeManager()
+        homeManager = manager
+        bindHomeManagerDelegate(manager)
+        manager.waitLoadCacheComplete { [weak self] complete in
+            self?.reproLog("waitLoadCacheComplete complete=\(complete)")
+            work()
+        }
+    }
+
+    /// Official getHomeData — deviceList is empty until this succeeds.
+    private func fetchHomeDeviceList(
+        homeId: Int64,
+        completion: @escaping ([ThingSmartDeviceModel]?) -> Void
+    ) {
+        ensureHomeDelegate(homeId: homeId)
+        guard let home = self.home else {
+            reproLog("getHomeData skip home=nil homeId=\(homeId)")
+            completion(nil)
+            return
+        }
+
+        home.getDataWithSuccess({ [weak self] _ in
+            let list = home.deviceList
+            self?.reproLog("getHomeData ok homeId=\(homeId) count=\(list?.count ?? -1)")
+            print("✅ Home 详细信息已获取，设备列表已更新: homeId=\(homeId) count=\(list?.count ?? 0)")
+            completion(list)
+        }, failure: { [weak self] error in
+            let msg = error?.localizedDescription ?? "unknown"
+            print("⚠️ 获取 Home 详细信息失败: \(msg)")
+            self?.reproLog("getHomeData fail homeId=\(homeId) err=\(msg)")
+            completion(nil)
+        })
+    }
+
+    private func refreshCurrentHomeData() {
+        handleRefreshHomeData { _ in }
+    }
+
+    private func handleRefreshHomeData(result: @escaping FlutterResult) {
+        getPreferredHome { [weak self] homeModel in
+            guard let self = self, let homeModel = homeModel else {
+                result(false)
+                return
+            }
+            self.ensureHomeDelegate(homeId: homeModel.homeId)
+            self.fetchHomeDeviceList(homeId: homeModel.homeId) { list in
+                result(list != nil)
+            }
+        }
+    }
+
+    private func resolveConnectIdentity(
+        deviceId: String,
+        homeDevice: ThingSmartDeviceModel?,
+        dartBluetoothId: String?,
+        dartProductKey: String? = nil
+    ) -> (uuid: String, productKey: String, source: String, isOnline: Bool) {
+        let dartUuid = dartBluetoothId ?? ""
+        let dartPk = dartProductKey ?? ""
+        if !dartUuid.isEmpty && !dartPk.isEmpty {
+            return (dartUuid, dartPk, "dartLocal", false)
+        }
+
+        if let homeDevice,
+           let uuid = homeDevice.uuid, !uuid.isEmpty,
+           let productKey = homeDevice.productId, !productKey.isEmpty {
+            return (uuid, productKey, "home.deviceList", homeDevice.isOnline)
+        }
+
+        if let sdkDevice = ThingSmartDevice(deviceId: deviceId) {
+            let model = sdkDevice.deviceModel
+            if let uuid = model.uuid, !uuid.isEmpty,
+               let productKey = model.productId, !productKey.isEmpty {
+                return (uuid, productKey, "ThingSmartDevice", model.isOnline)
+            }
+        }
+
+        if !dartUuid.isEmpty, let adv = scannedDevices[dartUuid],
+           let productKey = adv.productId, !productKey.isEmpty {
+            return (dartUuid, productKey, "dartUuid+scanCache", false)
+        }
+
+        if !dartUuid.isEmpty,
+           let sdkDevice = ThingSmartDevice(deviceId: deviceId),
+           let productKey = sdkDevice.deviceModel.productId, !productKey.isEmpty {
+            return (dartUuid, productKey, "dartUuid+sdkProductKey", false)
+        }
+
+        return ("", "", "unresolved", false)
+    }
+
+    private func matchDevice(
+        _ deviceId: String,
+        in devices: [ThingSmartDeviceModel]?
+    ) -> ThingSmartDeviceModel? {
+        devices?.first(where: { $0.devId == deviceId }) ??
+            devices?.first(where: { $0.uuid == deviceId })
+    }
+
     /// 获取家庭列表（返回所有家庭）
     /// - Parameter completion: 完成回调，返回家庭列表数组
     func getHomeList(completion: @escaping ([ThingSmartHomeModel]?) -> Void) {
-        // 如果 homeManager 未初始化，创建新实例
-        let manager = homeManager ?? ThingSmartHomeManager()
+        waitLoadCacheThen { [weak self] in
+            let manager = self?.homeManager ?? ThingSmartHomeManager()
+            self?.homeManager = manager
+            self?.bindHomeManagerDelegate(manager)
+            manager.getHomeList(success: { homes in
+                print("✅ 获取家庭列表成功: \(homes?.count ?? 0) 个家庭")
+                if let homes, homes.count == 1 {
+                    self?.persistPreferredHomeId(homes[0].homeId)
+                }
+                completion(homes)
+            }, failure: { error in
+                if let e = error {
+                    print("❌ 获取家庭列表失败: \(e.localizedDescription)")
+                } else {
+                    print("❌ 获取家庭列表失败: unknown error")
+                }
+                completion(nil)
+            })
+        }
+    }
 
-        manager.getHomeList(success: { homes in
-            print("✅ 获取家庭列表成功: \(homes?.count ?? 0) 个家庭")
-            completion(homes)
-        }, failure: { error in
-            if let e = error {
-                print("❌ 获取家庭列表失败: \(e.localizedDescription)")
-            } else {
-                print("❌ 获取家庭列表失败: unknown error")
+    /// Resolve the home that owns paired devices. Prefer the persisted homeId.
+    private func getPreferredHome(completion: @escaping (ThingSmartHomeModel?) -> Void) {
+        getHomeList { [weak self] homes in
+            guard let homes, !homes.isEmpty else {
+                completion(nil)
+                return
             }
-            completion(nil)
-        })
+            if let saved = self?.storedPreferredHomeId(),
+               let match = homes.first(where: { $0.homeId == saved }) {
+                completion(match)
+                return
+            }
+            completion(homes.first)
+        }
     }
 
     /// 获取第一个家庭（向后兼容的便捷方法）
     /// - Parameter completion: 完成回调，返回第一个家庭模型
     private func getFirstHome(completion: @escaping (ThingSmartHomeModel?) -> Void) {
-        getHomeList { homes in
-            completion(homes?.first)
-        }
+        getPreferredHome(completion: completion)
     }
 
     /// 获取当前家庭的数据信息（包括设备列表）
@@ -1614,54 +1919,123 @@ extension Date {
     // }
 
     private func getDevicesFromHome(_ homeModel: ThingSmartHomeModel, completion: @escaping ([ThingSmartDeviceModel]?) -> Void) {
-        let homeId = homeModel.homeId
-        // 确保使用 self.home 实例，保持 delegate 设置
-        ensureHomeDelegate(homeId: homeId)
-        
-        guard let home = self.home else {
+        fetchHomeDeviceList(homeId: homeModel.homeId, completion: completion)
+    }
+
+    private func logGetDevice(
+        deviceId: String,
+        homeId: Int64,
+        devices: [ThingSmartDeviceModel]?,
+        device: ThingSmartDeviceModel?
+    ) {
+        let match: String
+        if device?.devId == deviceId {
+            match = "devId"
+        } else if device?.uuid == deviceId {
+            match = "uuid"
+        } else {
+            match = "none"
+        }
+        let sample = devices?.prefix(4).map { model in
+            "\((model.devId ?? "?"))/\((model.uuid ?? "?"))"
+        }.joined(separator: ",") ?? "nil"
+        reproLog(
+            "getDevice id=\(deviceId) homeId=\(homeId) " +
+                "count=\(devices?.count ?? -1) match=\(match) " +
+                "uuid=\(device?.uuid ?? "nil") productId=\(device?.productId ?? "nil") " +
+                "isOnline=\(device?.isOnline ?? false) sample=[\(sample)]"
+        )
+    }
+
+    private func findDeviceInHomes(
+        deviceId: String,
+        homes: [ThingSmartHomeModel],
+        index: Int,
+        completion: @escaping (ThingSmartDeviceModel?) -> Void
+    ) {
+        if index >= homes.count {
             completion(nil)
             return
         }
-
-        home.getDetailWithSuccess({ _ in
-                                      completion(home.deviceList)
-                                  }, failure: { error in
-            print("❌ Failed to get home details: \(error?.localizedDescription ?? "unknown")")
-            completion(nil)
-        })
+        let homeModel = homes[index]
+        getDevicesFromHome(homeModel) { [weak self] devices in
+            guard let self = self else {
+                completion(nil)
+                return
+            }
+            if let device = self.matchDevice(deviceId, in: devices) {
+                self.persistPreferredHomeId(homeModel.homeId)
+                self.logGetDevice(
+                    deviceId: deviceId,
+                    homeId: homeModel.homeId,
+                    devices: devices,
+                    device: device
+                )
+                completion(device)
+                return
+            }
+            self.findDeviceInHomes(
+                deviceId: deviceId,
+                homes: homes,
+                index: index + 1,
+                completion: completion
+            )
+        }
     }
 
     private func getDevice(deviceId: String, completion: @escaping (ThingSmartDeviceModel?) -> Void) {
-        getFirstHome { [weak self] homeModel in
-            guard let self = self, let homeModel = homeModel else {
+        getPreferredHome { [weak self] homeModel in
+            guard let self = self else {
+                completion(nil)
+                return
+            }
+            guard let homeModel = homeModel else {
+                self.reproLog("getDevice home=nil id=\(deviceId)")
                 completion(nil)
                 return
             }
 
             self.getDevicesFromHome(homeModel) { devices in
-                // deviceId may be a Tuya devId or a bluetooth uuid (bluetoothId in Flutter).
-                // Prefer devId match, then fallback to uuid match.
-                let device =
-                    devices?.first(where: { $0.devId == deviceId }) ??
-                    devices?.first(where: { $0.uuid == deviceId })
-                completion(device)
+                if let device = self.matchDevice(deviceId, in: devices) {
+                    self.logGetDevice(
+                        deviceId: deviceId,
+                        homeId: homeModel.homeId,
+                        devices: devices,
+                        device: device
+                    )
+                    completion(device)
+                    return
+                }
+
+                self.getHomeList { homes in
+                    let others = (homes ?? []).filter { $0.homeId != homeModel.homeId }
+                    if others.isEmpty {
+                        self.logGetDevice(
+                            deviceId: deviceId,
+                            homeId: homeModel.homeId,
+                            devices: devices,
+                            device: nil
+                        )
+                        completion(nil)
+                        return
+                    }
+                    self.reproLog(
+                        "getDevice miss preferred homeId=\(homeModel.homeId), search \(others.count) other homes"
+                    )
+                    self.findDeviceInHomes(
+                        deviceId: deviceId,
+                        homes: others,
+                        index: 0,
+                        completion: completion
+                    )
+                }
             }
         }
     }
 
     /// 通过 bluetoothId (uuid) 查找设备
     private func getDeviceByUuid(uuid: String, completion: @escaping (ThingSmartDeviceModel?) -> Void) {
-        getFirstHome { [weak self] homeModel in
-            guard let self = self, let homeModel = homeModel else {
-                completion(nil)
-                return
-            }
-
-            self.getDevicesFromHome(homeModel) { devices in
-                let device = devices?.first(where: { $0.uuid == uuid })
-                completion(device)
-            }
-        }
+        getDevice(deviceId: uuid, completion: completion)
     }
 
     private func updateConnectionState(deviceId: String, state: String, error: String? = nil) {
@@ -1987,5 +2361,25 @@ extension AppDelegate: ThingSmartHomeDelegate {
 
         // print("⚠️ 设备 uuid 未知，使用 devId: \(devId)")
         handleDpReport(deviceId: devId, dps: dps)
+    }
+}
+
+// MARK: - ThingSmartHomeManagerDelegate
+extension AppDelegate: ThingSmartHomeManagerDelegate {
+    func homeManager(_ manager: ThingSmartHomeManager!, didAddHome home: ThingSmartHomeModel!) {
+        guard let home else { return }
+        persistPreferredHomeId(home.homeId)
+    }
+
+    func homeManager(_ manager: ThingSmartHomeManager!, didRemoveHome homeId: Int64) {
+        if storedPreferredHomeId() == homeId {
+            UserDefaults.standard.removeObject(forKey: preferredHomeIdKey)
+        }
+    }
+
+    /// Official: MQTT reconnects after foreground; refresh home details so deviceList is current.
+    func serviceConnectedSuccess() {
+        reproLog("MQTT serviceConnectedSuccess, refresh home data")
+        refreshCurrentHomeData()
     }
 }

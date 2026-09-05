@@ -142,6 +142,10 @@ class _HomePageState extends State<HomePage>
       final onlineStatusMap =
           await connectionChannel.invokeMethod('checkDevicesOnline', {
                 'deviceIds': deviceIds,
+                'bluetoothIds': {
+                  for (final device in devicesWithDevId)
+                    device.devId!: device.bluetoothId,
+                },
               })
               as Map<dynamic, dynamic>?;
 
@@ -801,6 +805,14 @@ class _HomePageState extends State<HomePage>
           ),
         );
       } else {
+        if (device.productKey.isNotEmpty &&
+            deviceInfo.productKey != device.productKey) {
+          unawaited(
+            _dbService.updateDevice(
+              deviceInfo.copyWith(productKey: device.productKey),
+            ),
+          );
+        }
         _devices.add(
           BluetoothDevice(
             bluetoothId: device.bluetoothId,
@@ -1485,6 +1497,8 @@ class _HomePageState extends State<HomePage>
           }
         }
         
+        final persistedProductKey =
+            device.productKey.isNotEmpty ? device.productKey : null;
         final newDevice = ConnectedDevice(
           bluetoothId: device.bluetoothId,
           name: device.name,
@@ -1493,6 +1507,7 @@ class _HomePageState extends State<HomePage>
           isRunning: true,
           isRemembered: true,
           devId: (finalDevId != null && finalDevId.isNotEmpty) ? finalDevId : null,
+          productKey: persistedProductKey,
         );
 
         final rememberedDevices = await _dbService.getRememberedDevices();
@@ -1521,6 +1536,7 @@ class _HomePageState extends State<HomePage>
               devId: devIdToUse,
               isRunning: true,
               isRemembered: true,
+              productKey: persistedProductKey ?? existingDevice.productKey,
             ),
           );
         } else {

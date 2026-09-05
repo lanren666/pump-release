@@ -205,6 +205,10 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
       final raw =
           await _connectionChannel.invokeMethod('checkDevicesOnline', {
                 'deviceIds': withDevId.map((d) => d.devId!).toList(),
+                'bluetoothIds': {
+                  for (final device in withDevId)
+                    device.devId!: device.bluetoothId,
+                },
               })
               as Map<dynamic, dynamic>?;
       if (raw == null) return {};
@@ -227,6 +231,7 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
     try {
       return await _connectionChannel.invokeMethod('isDeviceOnline', {
                 'deviceId': device.nativeBleId,
+                'bluetoothId': device.bluetoothId,
               })
               as bool? ??
           false;
@@ -309,9 +314,10 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
 
     try {
       final connectionResults =
-          await _connectionChannel.invokeMethod('connectBleDevices', {
-                'deviceIds': nativeIds,
-              })
+          await _connectionChannel.invokeMethod(
+                'connectBleDevices',
+                nativeConnectBleArgs(devices),
+              )
               as Map<dynamic, dynamic>?;
       await _applyBatchConnectResults(devices, connectionResults);
     } catch (e) {

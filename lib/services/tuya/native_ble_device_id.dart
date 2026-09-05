@@ -11,3 +11,19 @@ extension NativeBleDeviceId on ConnectedDevice {
 
 String nativeBleIdFor({required String bluetoothId, String? devId}) =>
     (devId != null && devId.isNotEmpty) ? devId : bluetoothId;
+
+/// Payload for native connectBleDevices / online checks.
+/// iOS reconnect uses bluetoothId + productKey; Android uses resolved devId.
+Map<String, dynamic> nativeConnectBleArgs(List<ConnectedDevice> devices) {
+  return {
+    'deviceIds': devices.map((d) => d.nativeBleId).toList(),
+    'bluetoothIds': {
+      for (final device in devices) device.nativeBleId: device.bluetoothId,
+    },
+    'productKeys': {
+      for (final device in devices)
+        if (device.productKey != null && device.productKey!.isNotEmpty)
+          device.nativeBleId: device.productKey,
+    },
+  };
+}

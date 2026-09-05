@@ -9,7 +9,7 @@ import 'native_ble_device_id.dart';
 class DeviceListenerService {
   const DeviceListenerService._();
 
-  /// On iOS, [registerDeviceListener] expects bluetoothId (uuid), not Tuya devId.
+  /// Native attaches [ThingSmartDevice] by Tuya [devId]; [bluetoothId] is optional.
   static Future<bool> registerIfRunning(
     ConnectedDevice device, {
     bool bypassOnlineCheck = false,
@@ -23,6 +23,7 @@ class DeviceListenerService {
         final isOnline =
             await connectionChannel.invokeMethod('isDeviceOnline', {
                   'deviceId': device.nativeBleId,
+                  'bluetoothId': device.bluetoothId,
                 })
                 as bool? ??
             false;
@@ -31,6 +32,7 @@ class DeviceListenerService {
 
       await connectionChannel.invokeMethod('registerDeviceListener', {
         'deviceId': device.nativeBleId,
+        'bluetoothId': device.bluetoothId,
       });
       debugPrint('✅ 设备监听器注册成功: ${device.nativeBleId}');
       return true;

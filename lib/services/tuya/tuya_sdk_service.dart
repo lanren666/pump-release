@@ -18,6 +18,7 @@ class TuyaSdkService {
   static bool _warmUpStarted = false;
   static int _warmUpAttempt = 0;
   static DateTime? _warmUpStartedAt;
+  static DateTime? _lastHomeRefreshAt;
 
   static bool _isUserSessionLoss(PlatformException e) => e.code == 'USER_SESSION_LOSS';
 
@@ -127,14 +128,21 @@ class TuyaSdkService {
     try {
       warmUpHomeReady();
       final existing = await getHomeId();
-      if (existing != null && existing.isNotEmpty) return existing;
+      if (existing != null && existing.isNotEmpty) {
+        await refreshHomeData();
+        return existing;
+      }
 
       _homeReadyCompleter ??= Completer<String?>();
       // If last attempt finished unsuccessfully, allow a new attempt.
       _initializeFuture ??= initialize();
 
       final homeId = await _homeReadyCompleter!.future.timeout(timeout);
-      return (homeId != null && homeId.isNotEmpty) ? homeId : null;
+      if (homeId != null && homeId.isNotEmpty) {
+        await refreshHomeData();
+        return homeId;
+      }
+      return null;
     } catch (e) {
       AppLogger.e('sdk', 'ensureHomeReady', {'error': e.toString()});
       _initializeFuture = null; // allow next ensure to retry
@@ -283,6 +291,26 @@ class TuyaSdkService {
     }
   }
 
+  /// Official getHomeData / getHomeDetail so deviceList is populated.
+  /// Debounced so periodic reconnect does not hammer the cloud.
+  static Future<void> refreshHomeData({bool force = false}) async {
+    if (!force &&
+        _lastHomeRefreshAt != null &&
+        DateTime.now().difference(_lastHomeRefreshAt!) <
+            const Duration(seconds: 30)) {
+      return;
+    }
+    try {
+      final ok = await _channel.invokeMethod('refreshHomeData') ?? false;
+      if (ok == true) {
+        _lastHomeRefreshAt = DateTime.now();
+      }
+      AppLogger.sdk('refreshHomeData', {'ok': ok});
+    } catch (e) {
+      AppLogger.w('sdk', 'refreshHomeData', {'error': e.toString()});
+    }
+  }
+
   // 从数据库获取保存的家庭ID
   static Future<String?> getHomeId() async {
     try {
@@ -331,22 +359,33 @@ class TuyaSdkService {
 
     // 3. 获取家庭列表
     final homes = await getHomeList();
+    final savedHomeId = await getHomeId();
 
     if (homes.isEmpty) {
-      // 如果家庭列表为空，创建新家庭
-      debugPrint('🏠 家庭列表为空，创建新家庭...');
-      final homeId = await createHome();
-      if (homeId != null) {
-        await saveHomeId(homeId);
-      } else {
+      // Keep the already-paired home instead of creating a second empty one
+      // when getHomeList is briefly empty (cache not ready).
+      if (savedHomeId != null && savedHomeId.isNotEmpty) {
+        debugPrint('🏠 家庭列表为空，保留已保存 homeId: $savedHomeId');
         if (_homeReadyCompleter != null && !_homeReadyCompleter!.isCompleted) {
-          _homeReadyCompleter!.complete(null);
+          _homeReadyCompleter!.complete(savedHomeId);
+        }
+      } else {
+        debugPrint('🏠 家庭列表为空，创建新家庭...');
+        final homeId = await createHome();
+        if (homeId != null) {
+          await saveHomeId(homeId);
+        } else {
+          if (_homeReadyCompleter != null && !_homeReadyCompleter!.isCompleted) {
+            _homeReadyCompleter!.complete(null);
+          }
         }
       }
     } else {
-      // 如果有家庭，保存第一个家庭的 homeId
-      final firstHome = homes[0];
-      final homeId = firstHome['homeId']?.toString() ?? '';
+      final matched = homes.firstWhere(
+        (home) => home['homeId']?.toString() == savedHomeId,
+        orElse: () => homes[0],
+      );
+      final homeId = matched['homeId']?.toString() ?? '';
       if (homeId.isNotEmpty) {
         await saveHomeId(homeId);
         debugPrint('✅ 已保存 homeId: $homeId');

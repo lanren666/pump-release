@@ -23,7 +23,7 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), 'pump.db');
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -39,7 +39,8 @@ class DatabaseService {
         battery INTEGER DEFAULT 0,
         position TEXT DEFAULT 'left',
         is_running INTEGER DEFAULT 0,
-        is_remembered INTEGER DEFAULT 0
+        is_remembered INTEGER DEFAULT 0,
+        product_key TEXT DEFAULT ''
       )
     ''');
 
@@ -66,9 +67,19 @@ class DatabaseService {
           battery INTEGER DEFAULT 0,
           position TEXT DEFAULT 'left',
           is_running INTEGER DEFAULT 0,
-          is_remembered INTEGER DEFAULT 0
+          is_remembered INTEGER DEFAULT 0,
+          product_key TEXT DEFAULT ''
         )
       ''');
+    }
+    if (oldVersion < 5) {
+      try {
+        await db.execute(
+          "ALTER TABLE connected_devices ADD COLUMN product_key TEXT DEFAULT ''",
+        );
+      } catch (_) {
+        // Column already exists after a partial upgrade.
+      }
     } else if (oldVersion < 2) {
       // 旧版本升级逻辑，先留着
       await db.execute('''
