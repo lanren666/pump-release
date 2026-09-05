@@ -220,6 +220,7 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
           result[device.devId!] = status;
         }
       }
+      debugPrint('[BLE_REPRO] periodic onlineMap=$result');
       return result;
     } catch (e) {
       debugPrint('批量检查设备在线状态失败: $e');
@@ -311,17 +312,33 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
 
     final nativeIds = devices.map((d) => d.nativeBleId).toList();
     debugPrint('批量重连 ${devices.length} 台设备: $nativeIds');
+    debugPrint('[BLE_REPRO] periodic connectBleDevices ids=$nativeIds');
+    AppLogger.hardware('BLE_REPRO periodic connectBleDevices', {
+      'ids': nativeIds.join(','),
+    });
 
     try {
+      final startedAt = DateTime.now();
       final connectionResults =
           await _connectionChannel.invokeMethod(
                 'connectBleDevices',
                 nativeConnectBleArgs(devices),
               )
               as Map<dynamic, dynamic>?;
+      final elapsedMs =
+          DateTime.now().difference(startedAt).inMilliseconds;
+      debugPrint(
+        '[BLE_REPRO] periodic connectBleDevices raw=$connectionResults '
+        'elapsedMs=$elapsedMs',
+      );
+      final nativeRepro = connectionResults?['_repro'];
+      if (nativeRepro != null) {
+        debugPrint('[BLE_REPRO] periodic connectBleDevices native=$nativeRepro');
+      }
       await _applyBatchConnectResults(devices, connectionResults);
     } catch (e) {
       debugPrint('批量重连设备时出错: $e');
+      debugPrint('[BLE_REPRO] periodic connectBleDevices error=$e');
     }
   }
 
@@ -378,6 +395,24 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
       for (final device in rememberedDevices) {
         if (device.devId == null || device.devId!.isEmpty) {
           debugPrint('设备缺少 devId，跳过: ${device.name}');
+          continue;
+        }
+
+        if (DebugForcedOffline.shouldBlockAutoOnline(
+          bluetoothId: device.bluetoothId,
+          devId: device.devId,
+        )) {
+          debugPrint(
+            '[INFO][FW_SNAP] debug forced offline, skip periodic reconnect: '
+            'devId=${device.devId}',
+          );
+          unawaited(
+            DebugForcedOffline.redropNativeIfHeld(
+              bluetoothId: device.bluetoothId,
+              nativeBleId: device.nativeBleId,
+              devId: device.devId,
+            ),
+          );
           continue;
         }
 
@@ -530,6 +565,17 @@ class _PumpAppState extends State<PumpApp> with WidgetsBindingObserver {
       // 只更新已记住的设备
       if (!device.isRemembered) {
         debugPrint('设备未记住，跳过更新: devId=$devId');
+        return;
+      }
+      if (isRunning &&
+          DebugForcedOffline.shouldBlockAutoOnline(
+            bluetoothId: device.bluetoothId,
+            devId: devId,
+          )) {
+        debugPrint(
+          '[INFO][FW_SNAP] debug forced offline, skip isRunning=true '
+          'source=$source devId=$devId',
+        );
         return;
       }
       if (device.isRunning == isRunning) {

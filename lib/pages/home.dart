@@ -17,6 +17,7 @@ import '../services/tuya/dp_constants.dart';
 import '../services/tuya/first_dp_or_timeout.dart';
 import '../services/tuya/device_listener_service.dart';
 import '../services/tuya/device_reconnect_policy.dart';
+import '../services/tuya/native_ble_device_id.dart';
 import '../services/tuya/running_status_log.dart';
 import '../l10n/app_localizations.dart';
 import '../services/diagnostics/app_logger.dart';
@@ -168,6 +169,21 @@ class _HomePageState extends State<HomePage>
 
         if (!isOnline) {
           offlineDevices.add(device);
+        } else if (DebugForcedOffline.shouldBlockAutoOnline(
+          bluetoothId: device.bluetoothId,
+          devId: device.devId,
+        )) {
+          debugPrint(
+            '[INFO][FW_SNAP] debug forced offline, skip checkDevicesOnline online: '
+            'devId=${device.devId}',
+          );
+          unawaited(
+            DebugForcedOffline.redropNativeIfHeld(
+              bluetoothId: device.bluetoothId,
+              nativeBleId: device.nativeBleId,
+              devId: device.devId,
+            ),
+          );
         } else {
           NetworkStatusRunningPolicy.onOnline(device.bluetoothId);
           debugPrint(
@@ -509,6 +525,23 @@ class _HomePageState extends State<HomePage>
       }
 
       if (online) {
+        if (DebugForcedOffline.shouldBlockAutoOnline(
+          bluetoothId: device.bluetoothId,
+          devId: devId,
+        )) {
+          debugPrint(
+            '[INFO][FW_SNAP] debug forced offline, ignore native online: '
+            'devId=$devId',
+          );
+          unawaited(
+            DebugForcedOffline.redropNativeIfHeld(
+              bluetoothId: device.bluetoothId,
+              nativeBleId: device.nativeBleId,
+              devId: devId,
+            ),
+          );
+          return;
+        }
         NetworkStatusRunningPolicy.onOnline(device.bluetoothId);
         debugPrint(
           '🧭 isRunning 更新来源=networkStatusChanged(online): devId=$devId',
@@ -572,6 +605,17 @@ class _HomePageState extends State<HomePage>
       }
 
       if (!device.isRemembered) {
+        return;
+      }
+      if (isRunning &&
+          DebugForcedOffline.shouldBlockAutoOnline(
+            bluetoothId: device.bluetoothId,
+            devId: devId,
+          )) {
+        debugPrint(
+          '[INFO][FW_SNAP] debug forced offline, skip isRunning=true '
+          'source=$source devId=$devId',
+        );
         return;
       }
       if (device.isRunning == isRunning) {
@@ -1432,6 +1476,18 @@ class _HomePageState extends State<HomePage>
         debugPrint('🔌 [connectDevice] bluetoothId=${device.bluetoothId} '
             'dbIsRemembered=${dbDeviceForConnect?.isRemembered} '
             'existingDevId=${existingDevId.isEmpty ? "(empty)" : existingDevId}');
+        AppLogger.hardware('BLE_REPRO connectDevice dart route', {
+          'bluetoothId': device.bluetoothId,
+          'uuid': device.uuid,
+          'dbIsRemembered': dbDeviceForConnect?.isRemembered,
+          'existingDevId': existingDevId.isEmpty ? '(empty)' : existingDevId,
+          'willPassDevId': existingDevId.isNotEmpty,
+        });
+        debugPrint(
+          '[BLE_REPRO] connectDevice dart remembered=${dbDeviceForConnect?.isRemembered} '
+          'existingDevId=${existingDevId.isEmpty ? "(empty)" : existingDevId} '
+          'willPassDevId=${existingDevId.isNotEmpty}',
+        );
 
         final Map<String, dynamic> connectParams = {
           'deviceId': device.bluetoothId,
@@ -1467,6 +1523,9 @@ class _HomePageState extends State<HomePage>
           'success': result,
           'returnedDevId': returnedDevId,
         });
+        debugPrint(
+          '[BLE_REPRO] connectDevice native success=$result returnedDevId=$returnedDevId',
+        );
       } else {
         result = true;
         returnedDevId = null;
@@ -1613,7 +1672,22 @@ class _HomePageState extends State<HomePage>
       AppLogger.user('disconnectDevice', {'bluetoothId': bluetoothId});
       final device = await _dbService.getDeviceByBluetoothId(bluetoothId);
       if (device != null) {
+        DebugForcedOffline.release(
+          bluetoothId: bluetoothId,
+          devId: device.devId,
+        );
+        AppLogger.hardware('BLE_REPRO delete start', {
+          'bluetoothId': bluetoothId,
+          'devId': device.devId,
+          'isRunning': device.isRunning,
+          'isRemembered': device.isRemembered,
+        });
+        debugPrint(
+          '[BLE_REPRO] delete start bluetoothId=$bluetoothId devId=${device.devId} '
+          'isRunning=${device.isRunning}',
+        );
         var removeOk = false;
+        var removeError = '';
         var wasLocallyOnline = false;
         if (device.devId != null &&
             device.devId!.isNotEmpty &&
@@ -1635,8 +1709,11 @@ class _HomePageState extends State<HomePage>
             });
             removeOk = true;
           } catch (e) {
+            removeError = e.toString();
             debugPrint('❌ 移除设备失败: $e');
           }
+        } else {
+          removeError = 'skipped_no_devId';
         }
 
         // Official: offline remove unbinds cloud only. Keep local devId if
@@ -1658,6 +1735,17 @@ class _HomePageState extends State<HomePage>
             debugPrint('resetBleActivationState failed: $e');
           }
         }
+        AppLogger.hardware('BLE_REPRO delete after local clear', {
+          'bluetoothId': bluetoothId,
+          'removeOk': removeOk,
+          'removeError': removeError,
+          'clearedDevId': shouldClearDevId,
+          'wasLocallyOnline': wasLocallyOnline,
+        });
+        debugPrint(
+          '[BLE_REPRO] delete cloudRemoveOk=$removeOk err=$removeError '
+          'localDevIdCleared=$shouldClearDevId wasLocallyOnline=$wasLocallyOnline',
+        );
         _pendingOfflineRemoveHint = removeOk && !wasLocallyOnline;
       }
 

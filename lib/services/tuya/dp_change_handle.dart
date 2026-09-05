@@ -7,6 +7,7 @@ import 'dp_constants.dart';
 import 'session_setting_parser.dart';
 import 'ble_dp_service.dart';
 import 'device_reconnect_policy.dart';
+import 'firmware_session_trace.dart';
 
 // SessionStatus 更新数据
 class SessionStatusUpdate {
@@ -155,13 +156,23 @@ class DpChangeHandle {
       case DpConstants.stimulationHybrid:
         final device3 = await _dbService.getDeviceByDevId(deviceId);
         final position3 = device3?.position;
+        final stimOn = dpValue is bool
+            ? dpValue
+            : (dpValue == true || dpValue == 1 || dpValue == "true");
+        PumpLog.i(
+          FirmwareSessionTrace.tag,
+          FirmwareSessionTrace.formatHybrid(
+            dpId: dpId,
+            deviceId: deviceId,
+            position: position3,
+            value: stimOn,
+          ),
+        );
         _dpParamController.add(
           DpParamUpdate(
             deviceId: deviceId,
             dpId: dpId,
-            value: dpValue is bool
-                ? dpValue
-                : (dpValue == true || dpValue == 1 || dpValue == "true"),
+            value: stimOn,
             position: position3,
           ),
         );
@@ -169,13 +180,23 @@ class DpChangeHandle {
       case DpConstants.expressionHybrid:
         final device4 = await _dbService.getDeviceByDevId(deviceId);
         final position4 = device4?.position;
+        final exprOn = dpValue is bool
+            ? dpValue
+            : (dpValue == true || dpValue == 1 || dpValue == "true");
+        PumpLog.i(
+          FirmwareSessionTrace.tag,
+          FirmwareSessionTrace.formatHybrid(
+            dpId: dpId,
+            deviceId: deviceId,
+            position: position4,
+            value: exprOn,
+          ),
+        );
         _dpParamController.add(
           DpParamUpdate(
             deviceId: deviceId,
             dpId: dpId,
-            value: dpValue is bool
-                ? dpValue
-                : (dpValue == true || dpValue == 1 || dpValue == "true"),
+            value: exprOn,
             position: position4,
           ),
         );
@@ -199,6 +220,25 @@ class DpChangeHandle {
             'mode=${parsedStatus['sessionModeName']}',
           );
 
+          final gapSec = DpAliveTracker.secondsSinceLast(deviceId);
+          final snapshot = FirmwareDp105Snapshot.fromParsed(parsedStatus);
+          if (FirmwareSessionTrace.shouldLogDp105Info(
+            deviceId: deviceId,
+            gapSec: gapSec,
+            snapshot: snapshot,
+          )) {
+            final device = await _dbService.getDeviceByDevId(deviceId);
+            PumpLog.i(
+              FirmwareSessionTrace.tag,
+              FirmwareSessionTrace.formatDp105(
+                deviceId: deviceId,
+                position: device?.position,
+                snapshot: snapshot,
+                gapSec: gapSec,
+              ),
+            );
+          }
+          FirmwareSessionTrace.remember(deviceId, snapshot);
           DpAliveTracker.touch(deviceId);
 
           _sessionStatusController.add(

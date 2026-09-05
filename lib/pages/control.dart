@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../l10n/app_localizations.dart';
@@ -21,10 +22,12 @@ import '../services/tuya/ble_types.dart';
 import '../services/tuya/dp_change_handle.dart';
 import '../services/diagnostics/pump_log.dart';
 import '../services/tuya/both_sync_diagnostics.dart';
+import '../services/tuya/firmware_session_trace.dart';
 import '../services/tuya/native_ble_device_id.dart';
 import '../services/tuya/device_reconnect_policy.dart';
 import '../services/tuya/device_listener_service.dart';
 import '../services/tuya/tuya_sdk_service.dart';
+import '../services/diagnostics/app_logger.dart';
 import '../config/app_config.dart';
 import '../config/ble_channels.dart';
 import 'control_timer_display_logic.dart';
@@ -380,6 +383,9 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         }
         _syncBothDisplayFromLeft();
       });
+      if (isRunning == 1) {
+        _onLiveDpWhileMaybeReconnecting(isLeftDevice);
+      }
       // debugPrint(
       //   '✅ Control 页面已更新数据(跳过isRunning): deviceId=${update.deviceId}, timePast=${timePast}s, timePastInPhase=${timePastInPhase}s, phase=$sessionPhase',
       // );
@@ -456,7 +462,10 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             _bothNotSynchronizedCount = 0;
             debugPrint('✅ 所有设备已停止，退出独立模式');
           }
-          _maybeClearSessionStartedAsBoth(isSessionEndCleanup: true);
+          // Do not treat this idle DP as a session end.  After a BLE/DB
+          // flicker both hasStarted flags may already be false while
+          // _sessionStartedAsBoth is still true; clearing it here would
+          // let the next isRunning=1 steal the tab to left/right.
         });
         return;
       }
@@ -527,6 +536,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         //   debugPrint('⚠️ 设备状态不一致: $deviceSide已停止，但另一边还在运行');
         // }
         setState(() {
+          _applyReportedDeviceMaxTime(isLeftDevice, maxTime);
           _clearDeviceMaxTimeOnStop(
             isLeftDevice: isLeftDevice,
             otherSideRunning: otherSideRunning,
@@ -657,6 +667,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         });
       }
     } else if (isRunning == 1) {
+      _onLiveDpWhileMaybeReconnecting(isLeftDevice);
       if (isLeftDevice && !_leftHasStarted) {
         // Only reset battery alert flag when battery is not currently low.
         // If battery is already low a dialog may be showing; clearing the flag
@@ -1420,6 +1431,8 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
         }
         _leftDevice = newLeftDevice;
         _rightDevice = newRightDevice;
+        _clearReconnectSpinnerIfOnline(newLeftDevice);
+        _clearReconnectSpinnerIfOnline(newRightDevice);
       });
     } catch (e) {
       debugPrint('❌ 刷新设备状态失败: $e');
@@ -1462,12 +1475,105 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       } else {
         _rightDevice = updatedDevice;
       }
+      if (isRunning) {
+        _clearReconnectSpinnerIfOnline(updatedDevice);
+      }
     });
+  }
+
+  void _clearReconnectSpinnerIfOnline(ConnectedDevice? device) {
+    if (device == null || !device.isRunning) return;
+    _reconnectingDeviceIds.remove(device.bluetoothId);
+  }
+
+  /// DP105 / live session proves BLE is back; drop the local reconnect spinner.
+  void _onLiveDpWhileMaybeReconnecting(bool isLeftDevice) {
+    final device = isLeftDevice ? _leftDevice : _rightDevice;
+    if (device == null) return;
+    final wasReconnecting = _reconnectingDeviceIds.contains(device.bluetoothId);
+    if (!wasReconnecting && device.isRunning) return;
+    _reconnectingDeviceIds.remove(device.bluetoothId);
+    if (!device.isRunning) {
+      unawaited(_updateDeviceConnectionStatus(device, true));
+    } else if (mounted && wasReconnecting) {
+      setState(() {});
+    }
+  }
+
+  Widget _buildDebugDisconnectButton(ConnectedDevice device, String side) {
+    return GestureDetector(
+      onTap: () => _debugDisconnectDevice(device, side),
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: ResponsiveText.getSize(context, 6),
+          vertical: ResponsiveText.getSize(context, 2),
+        ),
+        decoration: BoxDecoration(
+          color: const Color(0xFFDC2626),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          '断开',
+          style: ResponsiveText.captionSmall(
+            context,
+            fontWeight: FontWeight.w600,
+            color: AppColor.white,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Debug-only: drop BLE without unpairing so we can watch the real offline path.
+  ///
+  /// Armed only by this button in [kDebugMode]. Auto reconnect / 1-of-2
+  /// offline debounce for real drops is unchanged.
+  Future<void> _debugDisconnectDevice(ConnectedDevice device, String side) async {
+    if (!kDebugMode) return;
+    PumpLog.i(
+      FirmwareSessionTrace.tag,
+      'debug disconnect tap side=$side '
+      'bluetoothId=${device.bluetoothId} devId=${device.devId} '
+      'nativeBleId=${device.nativeBleId}',
+    );
+    DebugForcedOffline.hold(
+      bluetoothId: device.bluetoothId,
+      devId: device.devId,
+    );
+    await _updateDeviceConnectionStatus(device, false);
+    if (!AppConfig.tuyaEnabled) {
+      return;
+    }
+    try {
+      await connectionChannel.invokeMethod('disconnectBleDevice', {
+        'deviceId': device.nativeBleId,
+        'uuid': device.bluetoothId,
+      });
+      PumpLog.i(
+        FirmwareSessionTrace.tag,
+        'debug disconnect requested side=$side id=${device.nativeBleId} '
+        'hold armed — skip auto online / periodic reconnect',
+      );
+    } catch (e) {
+      PumpLog.e(
+        FirmwareSessionTrace.tag,
+        'debug disconnect failed side=$side error=$e',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('调试断开失败: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _reconnectDevice(ConnectedDevice device) async {
     if (!AppConfig.tuyaEnabled) return;
     if (_reconnectingDeviceIds.contains(device.bluetoothId)) return;
+    DebugForcedOffline.release(
+      bluetoothId: device.bluetoothId,
+      devId: device.devId,
+    );
 
     setState(() {
       _reconnectingDeviceIds.add(device.bluetoothId);
@@ -1475,10 +1581,23 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
 
     var connected = false;
     try {
+      AppLogger.hardware('BLE_REPRO reconnect tap', {
+        'bluetoothId': device.bluetoothId,
+        'devId': device.devId,
+        'nativeBleId': device.nativeBleId,
+        'isRunning': device.isRunning,
+      });
+      debugPrint(
+        '[BLE_REPRO] reconnect tap bluetoothId=${device.bluetoothId} '
+        'devId=${device.devId} nativeBleId=${device.nativeBleId}',
+      );
       final readyHomeId = await TuyaSdkService.ensureHomeReady(
         timeout: const Duration(seconds: 15),
       );
       if (readyHomeId == null || readyHomeId.isEmpty) {
+        AppLogger.e('hw', 'BLE_REPRO reconnect home not ready', {
+          'bluetoothId': device.bluetoothId,
+        });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('涂鸦初始化未完成，请检查网络后重试')),
@@ -1490,25 +1609,45 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       if (device.devId != null &&
           DeviceReconnectPolicy.shouldHealRunningFromDp(devId: device.devId!)) {
         connected = true;
+        debugPrint('[BLE_REPRO] reconnect skip native, heal from DP105');
       } else {
         final isOnline =
-            await connectionChannel.invokeMethod('isDeviceOnline', {
-                  'deviceId': device.nativeBleId,
-                })
+            await connectionChannel
+                    .invokeMethod('isDeviceOnline', {
+                      'deviceId': device.nativeBleId,
+                      'bluetoothId': device.bluetoothId,
+                    })
+                    .timeout(const Duration(seconds: 8))
                 as bool? ??
             false;
+        debugPrint('[BLE_REPRO] reconnect isDeviceOnline=$isOnline id=${device.nativeBleId}');
 
         if (isOnline) {
           connected = true;
         } else {
           final connectionResults =
-              await connectionChannel.invokeMethod('connectBleDevices', {
-                    'deviceIds': [device.nativeBleId],
-                  })
+              await connectionChannel
+                      .invokeMethod(
+                        'connectBleDevices',
+                        nativeConnectBleArgs([device]),
+                      )
+                      .timeout(const Duration(seconds: 20))
                   as Map<dynamic, dynamic>?;
 
           connected =
               connectionResults?[device.nativeBleId] as bool? ?? false;
+          AppLogger.hardware('BLE_REPRO reconnect connectBleDevices', {
+            'nativeBleId': device.nativeBleId,
+            'connected': connected,
+            'raw': connectionResults?.toString(),
+          });
+          debugPrint(
+            '[BLE_REPRO] reconnect connectBleDevices connected=$connected raw=$connectionResults',
+          );
+          final nativeRepro = connectionResults?['_repro'];
+          if (nativeRepro != null) {
+            debugPrint('[BLE_REPRO] reconnect connectBleDevices native=$nativeRepro');
+          }
 
           if (!connected &&
               device.devId != null &&
@@ -1516,10 +1655,12 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                 devId: device.devId!,
               )) {
             connected = true;
+            debugPrint('[BLE_REPRO] reconnect healed from DP105 after fail');
           }
         }
       }
 
+      debugPrint('[BLE_REPRO] reconnect final connected=$connected');
       if (connected) {
         await _updateDeviceConnectionStatus(device, true);
         try {
@@ -1541,7 +1682,15 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       }
     } catch (e) {
       debugPrint('手动重连失败: $e');
-      if (mounted) {
+      final current = device.position == 'left' ? _leftDevice : _rightDevice;
+      final alreadyOnline = current?.isRunning == true ||
+          (device.devId != null &&
+              DeviceReconnectPolicy.shouldHealRunningFromDp(
+                devId: device.devId!,
+              ));
+      if (alreadyOnline) {
+        await _updateDeviceConnectionStatus(device, true);
+      } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(AppLocalizations.of(context)!.reconnectFailed)),
         );
@@ -2239,6 +2388,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     );
     _leftDeviceMaxDuration = next.left;
     _rightDeviceMaxDuration = next.right;
+    _logFirmwareMaxTimeSplitIfNeeded();
   }
 
   void _clearDeviceMaxTimeOnStop({
@@ -2919,6 +3069,10 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
             ),
             SizedBox(width: ResponsiveText.getSize(context, 8)),
             _buildBatteryIndicator(device.battery),
+            if (kDebugMode) ...[
+              SizedBox(width: ResponsiveText.getSize(context, 4)),
+              _buildDebugDisconnectButton(device, side),
+            ],
           ],
         ),
       );
@@ -3897,7 +4051,6 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
     final rightTotalSec = _rightElapsedTime.inSeconds;
     final leftPhaseSec = _leftElapsedTimeInPhase.inSeconds;
     final rightPhaseSec = _rightElapsedTimeInPhase.inSeconds;
-
     final leftAlive =
         leftDevId != null && DpAliveTracker.isRecentlyAlive(leftDevId);
     final rightAlive =
@@ -3967,6 +4120,16 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
       selectedPumpIsBoth: _selectedPump == PumpSelection.both,
       sessionStartedAsBoth: _sessionStartedAsBoth,
     );
+  }
+
+  void _logFirmwareMaxTimeSplitIfNeeded() {
+    final warning = FirmwareSessionTrace.maxTimeSplitWarning(
+      leftMax: _leftDeviceMaxDuration,
+      rightMax: _rightDeviceMaxDuration,
+    );
+    if (warning != null) {
+      PumpLog.w(FirmwareSessionTrace.tag, warning);
+    }
   }
 
   /// 切换到独立模式：当 both 模式下检测到设备不同步时，切换到独立模式
@@ -4315,6 +4478,7 @@ class _ControlPageState extends State<ControlPage> with WidgetsBindingObserver {
                             _setCurrentIntensityMode(
                               firstPhaseMode ?? IntensityMode.stimulation,
                             );
+                            _sessionStartedAsBoth = false;
                             _setCurrentHasStarted(true);
                             _setCurrentIsRunning(true);
                             _resetCurrentElapsedTime();

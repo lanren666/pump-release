@@ -57,6 +57,7 @@ class MainActivity : FlutterActivity(), LocationListener {
     private val PERMISSION_REQUEST_CODE = 1001
     private val LOCATION_PERMISSION_REQUEST_CODE = 1002
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var scanTimeoutRunnable: Runnable? = null
 
     // 位置信息
     private var currentLatitude: Double = 0.0
@@ -70,6 +71,11 @@ class MainActivity : FlutterActivity(), LocationListener {
     // 已注册 DP 监听器的 IThingDevice 实例（devId -> instance）
     // 每次重新注册前先对旧实例调用 unRegisterDevListener，防止 listener 无限堆叠
     private val registeredDeviceListeners = mutableMapOf<String, IThingDevice>()
+
+    // Filter: adb logcat -s BLE_REPRO
+    private fun reproLog(msg: String) {
+        android.util.Log.i("BLE_REPRO", msg)
+    }
 
     private fun hasBluetoothPermissions(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -339,6 +345,10 @@ class MainActivity : FlutterActivity(), LocationListener {
 
                 "registerDeviceListener" -> {
                     handleRegisterDeviceListener(call, result)
+                }
+
+                "disconnectBleDevice" -> {
+                    handleDisconnectBleDevice(call, result)
                 }
 
                 "resetBleActivationState" -> {
@@ -759,11 +769,17 @@ class MainActivity : FlutterActivity(), LocationListener {
             "MainActivity",
             "🔗 开始连接设备: $deviceId, uuid: $uuid, productKey: $productKey, dartDevId: $dartDevId"
         )
+        reproLog(
+            "connectDevice enter deviceId=$deviceId uuid=$uuid pk=$productKey " +
+                "dartDevId=${dartDevId ?: "(empty)"} homeId=$homeId " +
+                "inScanCache=${scannedDevices.containsKey(uuid)}"
+        )
 
         // If Dart already knows the devId the device is paired — connect directly.
         // This bypasses the unreliable isActive reflection and network-dependent getHomeDetail.
         if (dartDevId != null) {
             android.util.Log.d("MainActivity", "✅ 使用 Dart 传入的 devId 直接连接: $dartDevId")
+            reproLog("connectDevice route=DIRECT_DART_DEVID dartDevId=$dartDevId")
             connectDeviceDirectly(dartDevId, deviceId, uuid, productKey, result)
             return
         }
@@ -780,9 +796,14 @@ class MainActivity : FlutterActivity(), LocationListener {
 
         if (deviceInfo != null && !isActive) {
             android.util.Log.d("MainActivity", "📱 设备未配网，需要先激活: $uuid")
+            reproLog("connectDevice route=ACTIVATE uuid=$uuid isActive=$isActive hasScanBean=true")
             activeDevice(deviceInfo, homeId, deviceId, uuid, productKey, result)
         } else {
             android.util.Log.d("MainActivity", "✅ 设备已配网，直接连接: $uuid")
+            reproLog(
+                "connectDevice route=DIRECT_SCAN_OR_HOME uuid=$uuid isActive=$isActive " +
+                    "hasScanBean=${deviceInfo != null}"
+            )
             // 设备已配网，尝试从home的设备列表中查找devId
             val targetHomeId = homeId ?: run {
                 // 如果没有传入homeId，尝试从第一个家庭获取
@@ -895,6 +916,7 @@ class MainActivity : FlutterActivity(), LocationListener {
         result: MethodChannel.Result
     ) {
         android.util.Log.d("MainActivity", "📱 开始激活设备: $uuid, homeId: $homeId")
+        reproLog("activate start uuid=$uuid homeId=$homeId deviceId=$deviceId address=${deviceInfo.address}")
         
         // 配网时立即停止扫描
         try {
@@ -928,6 +950,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                     val devId = deviceBean.getDevId()
                     android.util.Log.d("MainActivity", "✅ 设备激活成功: $deviceId")
                     android.util.Log.d("MainActivity", "devId: $devId")
+                    reproLog("activate success deviceId=$deviceId devId=$devId")
 
                     // 通过 EventChannel 发送 devId 到 Flutter 端
                     val eventData = JSONObject().apply {
@@ -958,6 +981,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                 override fun onFailure(code: Int, msg: String, handle: Any?) {
                     val errorMessage = "Device activation failed: code=$code msg=$msg handle=$handle"
                     android.util.Log.e("MainActivity", "❌ 设备激活失败: $errorMessage")
+                    reproLog("activate FAIL code=$code msg=$msg handle=$handle uuid=$uuid")
                     // Reset BLE scan state so the next activator attempt starts clean.
                     // Repeated failures leave the activator in a stuck state; stopping the
                     // scan and clearing cached device beans mirrors what an app restart does.
@@ -1168,6 +1192,10 @@ class MainActivity : FlutterActivity(), LocationListener {
         result: MethodChannel.Result
     ) {
         android.util.Log.d("MainActivity", "🔗 开始连接设备: devId=$devId, deviceId=$deviceId")
+        reproLog(
+            "connectDirectly start devId=$devId deviceId=$deviceId uuid=$uuid " +
+                "directConnect=true force=FORCE waitMs=2000"
+        )
 
         // 在主线程中执行连接操作（官方要求）
         mainHandler.post {
@@ -1194,6 +1222,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                 val isOnline = ThingHomeSdk.getBleManager().isBleLocalOnline(devId)
                 if (isOnline) {
                     android.util.Log.d("MainActivity", "✅ 设备连接成功: devId=$devId")
+                    reproLog("connectDirectly result isOnline=true success=true (real) devId=$devId")
                     updateConnectionState(deviceId, "connected")
                     // 二次注册确保监听器与最新 IThingDevice 实例绑定（registerDeviceListener 内部会先 unRegister 旧实例）
                     registerDeviceListener(devId)
@@ -1206,6 +1235,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                     result.success(resultData)
                 } else {
                     android.util.Log.w("MainActivity", "⚠️ 设备连接失败: devId=$devId")
+                    reproLog("connectDirectly result isOnline=false success=false devId=$devId")
                     updateConnectionState(deviceId, "disconnected")
                     val resultData = mapOf(
                         "success" to false,
@@ -1305,6 +1335,7 @@ class MainActivity : FlutterActivity(), LocationListener {
             mainHandler.post {
                 val devId = resolvedDevId ?: deviceId
                 val isOnline = ThingHomeSdk.getBleManager().isBleLocalOnline(devId)
+                reproLog("isDeviceOnline input=$deviceId resolved=$devId isOnline=$isOnline")
                 result.success(isOnline)
             }
         }
@@ -1348,9 +1379,11 @@ class MainActivity : FlutterActivity(), LocationListener {
 
         val flutterIds = deviceIds.map { it.toString() }
         android.util.Log.d("MainActivity", "🔗 批量连接设备: $flutterIds")
+        reproLog("connectBleDevices enter ids=$flutterIds directConnect=true force=FORCE waitMs=3000")
 
         resolveDevIds(flutterIds) { resolvedMap ->
             mainHandler.post {
+                reproLog("connectBleDevices resolved=$resolvedMap")
                 val builderList = mutableListOf<BleConnectBuilder>()
                 for (flutterId in flutterIds) {
                     val devId = resolvedMap[flutterId] ?: flutterId
@@ -1382,6 +1415,7 @@ class MainActivity : FlutterActivity(), LocationListener {
                                 "MainActivity",
                                 "✅ 设备连接成功: flutterId=$flutterId devId=$devId"
                             )
+                            reproLog("connectBleDevices result flutterId=$flutterId devId=$devId isOnline=true")
                             updateConnectionState(flutterId, "connected")
                             registerDeviceListener(devId)
                         } else {
@@ -1389,11 +1423,48 @@ class MainActivity : FlutterActivity(), LocationListener {
                                 "MainActivity",
                                 "⚠️ 设备连接失败: flutterId=$flutterId devId=$devId"
                             )
+                            reproLog("connectBleDevices result flutterId=$flutterId devId=$devId isOnline=false")
                             updateConnectionState(flutterId, "disconnected")
                         }
                     }
                     result.success(connectionResults)
                 }, 3000)
+            }
+        }
+    }
+
+    private fun handleDisconnectBleDevice(call: MethodCall, result: MethodChannel.Result) {
+        val args = call.arguments as? Map<*, *>
+        val deviceId = args?.get("deviceId") as? String
+            ?: run {
+                result.error("INVALID_ARGUMENT", "deviceId is required", null)
+                return
+            }
+
+        resolveDevId(deviceId) { resolved ->
+            val devId = resolved?.takeIf { it.isNotEmpty() } ?: deviceId
+            mainHandler.post {
+                try {
+                    val builderList = mutableListOf<BleConnectBuilder>()
+                    builderList.add(BleConnectBuilder().setDevId(devId))
+                    ThingHomeSdk.getBleManager().disconnectBleDevice(builderList)
+                    android.util.Log.d(
+                        "MainActivity",
+                        "🔌 debug disconnectBleDevice input=$deviceId resolved=$devId"
+                    )
+                    updateConnectionState(deviceId, "disconnected")
+                    if (devId != deviceId) {
+                        updateConnectionState(devId, "disconnected")
+                    }
+                    result.success(true)
+                } catch (e: Exception) {
+                    android.util.Log.e(
+                        "MainActivity",
+                        "❌ disconnectBleDevice failed: ${e.message}",
+                        e
+                    )
+                    result.error("DISCONNECT_FAILED", e.message, mapOf("devId" to devId))
+                }
             }
         }
     }
@@ -1407,9 +1478,11 @@ class MainActivity : FlutterActivity(), LocationListener {
             }
 
         android.util.Log.d("MainActivity", "🗑️ 开始移除设备: $devId")
+        reproLog("removeDevice start devId=$devId")
 
         val mDevice: IThingDevice? = ThingHomeSdk.newDeviceInstance(devId)
         if (mDevice == null) {
+            reproLog("removeDevice FAIL mDevice=null devId=$devId")
             result.error("REMOVE_FAILED", "Device instance is null", mapOf("devId" to devId))
             return
         }
@@ -1417,6 +1490,7 @@ class MainActivity : FlutterActivity(), LocationListener {
         mDevice.removeDevice(object : IResultCallback {
             override fun onError(errorCode: String, errorMsg: String) {
                 android.util.Log.e("MainActivity", "❌ 移除设备失败: $errorCode - $errorMsg")
+                reproLog("removeDevice FAIL devId=$devId code=$errorCode msg=$errorMsg")
                 result.error(
                     "REMOVE_FAILED", errorMsg, mapOf(
                         "errorCode" to errorCode,
@@ -1427,6 +1501,7 @@ class MainActivity : FlutterActivity(), LocationListener {
 
             override fun onSuccess() {
                 android.util.Log.d("MainActivity", "✅ 设备移除成功: $devId")
+                reproLog("removeDevice success (cloud only if BLE offline) devId=$devId")
                 result.success(null)
             }
         })
@@ -1770,6 +1845,11 @@ class MainActivity : FlutterActivity(), LocationListener {
         startBleScan(result)
     }
 
+    private fun cancelScanTimeout() {
+        scanTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
+        scanTimeoutRunnable = null
+    }
+
     private fun startBleScan(result: MethodChannel.Result? = null) {
         android.util.Log.d("MainActivity", "startBleScan called, isScanning: $isScanning")
 
@@ -1782,7 +1862,7 @@ class MainActivity : FlutterActivity(), LocationListener {
         isScanning = true
         android.util.Log.d("MainActivity", "Setting isScanning = true")
 
-        mainHandler.removeCallbacksAndMessages(null)
+        cancelScanTimeout()
 
         try {
             val scanSetting = LeScanSetting.Builder()
@@ -1809,6 +1889,13 @@ class MainActivity : FlutterActivity(), LocationListener {
 
                     mainHandler.post {
                         try {
+                            val isActive = try {
+                                val isActiveField = bean.javaClass.getDeclaredField("isActive")
+                                isActiveField.isAccessible = true
+                                isActiveField.getBoolean(bean)
+                            } catch (e: Exception) {
+                                false
+                            }
                             val deviceInfo = JSONObject().apply {
                                 put("id", bean.id ?: "")
                                 put("name", bean.name ?: "")
@@ -1816,14 +1903,6 @@ class MainActivity : FlutterActivity(), LocationListener {
                                 put("devId", "")
                                 put("providerName", bean.providerName ?: "")
                                 put("rssi", bean.rssi)
-                                // 尝试获取 isActive 属性
-                                val isActive = try {
-                                    val isActiveField = bean.javaClass.getDeclaredField("isActive")
-                                    isActiveField.isAccessible = true
-                                    isActiveField.getBoolean(bean)
-                                } catch (e: Exception) {
-                                    false
-                                }
                                 put("isActive", isActive)
                                 // 尝试获取 isProuductKey 属性
                                 val isProuductKey = try {
@@ -1840,6 +1919,10 @@ class MainActivity : FlutterActivity(), LocationListener {
                                     ThingHomeSdk.getBleManager().isBleLocalOnline(bean.id ?: "")
                                 )
                             }
+                            reproLog(
+                                "scan hit id=${bean.id} uuid=${bean.uuid} name=${bean.name} " +
+                                    "isActive=$isActive rssi=${bean.rssi}"
+                            )
                             android.util.Log.d(
                                 "MainActivity",
                                 "Sending device info to Flutter: ${deviceInfo.toString()}"
@@ -1854,7 +1937,7 @@ class MainActivity : FlutterActivity(), LocationListener {
 
             android.util.Log.d("MainActivity", "✅ startLeScan() called, waiting for results...")
 
-            mainHandler.postDelayed({
+            val timeout = Runnable {
                 if (isScanning) {
                     android.util.Log.d(
                         "MainActivity",
@@ -1865,7 +1948,9 @@ class MainActivity : FlutterActivity(), LocationListener {
                         eventSink?.success("SCAN_TIMEOUT")
                     }
                 }
-            }, 11000)
+            }
+            scanTimeoutRunnable = timeout
+            mainHandler.postDelayed(timeout, 11000)
 
             android.util.Log.d(
                 "MainActivity",
@@ -1891,7 +1976,7 @@ class MainActivity : FlutterActivity(), LocationListener {
         android.util.Log.d("MainActivity", "Stopping BLE scan...")
         isScanning = false
 
-        mainHandler.removeCallbacksAndMessages(null)
+        cancelScanTimeout()
 
         try {
             ThingHomeSdk.getBleOperator().stopLeScan()

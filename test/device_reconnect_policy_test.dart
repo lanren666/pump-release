@@ -262,6 +262,90 @@ void main() {
     });
   });
 
+  group('DebugForcedOffline', () {
+    setUp(() {
+      DebugForcedOffline.clearAll();
+      DpAliveTracker.clearAll();
+    });
+    tearDown(() {
+      DebugForcedOffline.clearAll();
+      DpAliveTracker.clearAll();
+    });
+
+    test('isHeld is false until the debug button arms a hold', () {
+      expect(
+        DebugForcedOffline.isHeld(
+          bluetoothId: 'ble-debug',
+          devId: 'dev-debug',
+        ),
+        isFalse,
+      );
+      DebugForcedOffline.hold(
+        bluetoothId: 'ble-debug',
+        devId: 'dev-debug',
+      );
+      expect(
+        DebugForcedOffline.isHeld(bluetoothId: 'ble-debug'),
+        isTrue,
+      );
+      expect(DebugForcedOffline.isHeld(devId: 'dev-debug'), isTrue);
+      expect(
+        DebugForcedOffline.shouldBlockAutoOnline(devId: 'dev-debug'),
+        isTrue,
+      );
+    });
+
+    test('hold does not affect other devices', () {
+      DebugForcedOffline.hold(
+        bluetoothId: 'ble-held',
+        devId: 'dev-held',
+      );
+      expect(
+        DebugForcedOffline.shouldBlockAutoOnline(
+          bluetoothId: 'ble-other',
+          devId: 'dev-other',
+        ),
+        isFalse,
+      );
+    });
+
+    test('release clears hold so auto online can resume', () {
+      DebugForcedOffline.hold(
+        bluetoothId: 'ble-rel',
+        devId: 'dev-rel',
+      );
+      DebugForcedOffline.release(
+        bluetoothId: 'ble-rel',
+        devId: 'dev-rel',
+      );
+      expect(
+        DebugForcedOffline.shouldBlockAutoOnline(
+          bluetoothId: 'ble-rel',
+          devId: 'dev-rel',
+        ),
+        isFalse,
+      );
+    });
+
+    test('held device is not healed from recent DP105', () {
+      const devId = 'dev-held-dp';
+      DpAliveTracker.touch(devId);
+      DebugForcedOffline.hold(
+        bluetoothId: 'ble-held-dp',
+        devId: devId,
+      );
+      expect(
+        DeviceReconnectPolicy.shouldHealRunningFromDp(devId: devId),
+        isFalse,
+      );
+      DebugForcedOffline.release(devId: devId);
+      expect(
+        DeviceReconnectPolicy.shouldHealRunningFromDp(devId: devId),
+        isTrue,
+      );
+    });
+  });
+
   group('DpAliveTracker with NetworkStatusRunningPolicy', () {
     setUp(() {
       OfflineStreakTracker.clearAll();

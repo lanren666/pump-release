@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../config/ble_channels.dart';
+
 /// Tracks recent DP105 (session status) reports as proof the BLE data path is alive.
 ///
 /// Used when native `isDeviceOnline` false-negatives while the DP listener still
@@ -68,8 +70,10 @@ class DeviceReconnectPolicy {
       !isOnline && DpAliveTracker.isRecentlyAlive(devId);
 
   /// DB says disconnected but DP105 proves the device is reachable.
-  static bool shouldHealRunningFromDp({required String devId}) =>
-      DpAliveTracker.isRecentlyAlive(devId);
+  static bool shouldHealRunningFromDp({required String devId}) {
+    if (DebugForcedOffline.isHeld(devId: devId)) return false;
+    return DpAliveTracker.isRecentlyAlive(devId);
+  }
 
   /// True when we must wait for the deviceActivated callback to write the devId —
   /// i.e. the device has no devId in the DB yet (first-time pairing).
@@ -165,5 +169,94 @@ class NetworkStatusRunningPolicy {
 
     OfflineStreakTracker.reset(bluetoothId);
     return true;
+  }
+}
+
+/// Debug-only hold armed solely by the control-page "断开" button.
+///
+/// Release builds never arm this ([kDebugMode] is false and the button is
+/// hidden), so production reconnect / offline debounce is unchanged.
+class DebugForcedOffline {
+  DebugForcedOffline._();
+
+  static const Duration _redropCooldown = Duration(seconds: 2);
+
+  static final Set<String> _heldBluetoothIds = {};
+  static final Set<String> _heldDevIds = {};
+  static final Map<String, DateTime> _lastRedropAtByBluetoothId = {};
+
+  static bool get isSupported => kDebugMode;
+
+  static void hold({required String bluetoothId, String? devId}) {
+    if (!isSupported) return;
+    if (bluetoothId.isNotEmpty) _heldBluetoothIds.add(bluetoothId);
+    if (devId != null && devId.isNotEmpty) _heldDevIds.add(devId);
+  }
+
+  static void release({String? bluetoothId, String? devId}) {
+    if (bluetoothId != null && bluetoothId.isNotEmpty) {
+      _heldBluetoothIds.remove(bluetoothId);
+      _lastRedropAtByBluetoothId.remove(bluetoothId);
+    }
+    if (devId != null && devId.isNotEmpty) {
+      _heldDevIds.remove(devId);
+    }
+  }
+
+  static bool isHeld({String? bluetoothId, String? devId}) {
+    if (!isSupported) return false;
+    if (bluetoothId != null &&
+        bluetoothId.isNotEmpty &&
+        _heldBluetoothIds.contains(bluetoothId)) {
+      return true;
+    }
+    if (devId != null &&
+        devId.isNotEmpty &&
+        _heldDevIds.contains(devId)) {
+      return true;
+    }
+    return false;
+  }
+
+  /// True when auto online / periodic reconnect must leave this device offline.
+  static bool shouldBlockAutoOnline({String? bluetoothId, String? devId}) =>
+      isHeld(bluetoothId: bluetoothId, devId: devId);
+
+  static Future<void> redropNativeIfHeld({
+    required String bluetoothId,
+    required String nativeBleId,
+    String? devId,
+  }) async {
+    if (!isHeld(bluetoothId: bluetoothId, devId: devId)) return;
+    if (bluetoothId.isEmpty) return;
+
+    final now = DateTime.now();
+    final lastAt = _lastRedropAtByBluetoothId[bluetoothId];
+    if (lastAt != null && now.difference(lastAt) < _redropCooldown) {
+      return;
+    }
+    _lastRedropAtByBluetoothId[bluetoothId] = now;
+
+    try {
+      await connectionChannel.invokeMethod('disconnectBleDevice', {
+        'deviceId': nativeBleId,
+        'uuid': bluetoothId,
+      });
+      debugPrint(
+        '[INFO][FW_SNAP] debug forced offline re-drop '
+        'bluetoothId=$bluetoothId nativeBleId=$nativeBleId',
+      );
+    } catch (e) {
+      debugPrint(
+        '[INFO][FW_SNAP] debug forced offline re-drop failed '
+        'bluetoothId=$bluetoothId error=$e',
+      );
+    }
+  }
+
+  static void clearAll() {
+    _heldBluetoothIds.clear();
+    _heldDevIds.clear();
+    _lastRedropAtByBluetoothId.clear();
   }
 }
