@@ -34,8 +34,12 @@
 	<string>We need access to Bluetooth for device setup</string>
 	<key>NSCameraUsageDescription</key>
 	<string>We need access to camera for scanning QR codes during device setup</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_dartVmService._tcp</string>
+	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>We need access to the local network to discover and connect to your devices on Wi-Fi during setup and control.</string>
+	<string>We need access to the local network to discover and connect to your devices on Wi-Fi during setup and control, and for Flutter debug attach.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>We need access to your location to get country code for device setup</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

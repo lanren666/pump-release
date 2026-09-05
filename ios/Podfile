@@ -39,8 +39,12 @@ target 'Runner' do
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 
-  pod 'ThingSmartHomeKit'
-  pod 'ThingSmartActivatorBizBundle'
+  # Pin to 6.11 to match Android thingsmart:6.11.0 and the current
+  # ThingSmartCryption / security-algorithm artifacts. Do not float to 7.x:
+  # 7.8 needs a rebuilt Cryption package and a different BLE Extra stack.
+  pod 'ThingSmartHomeKit', '~> 6.11.0'
+  pod 'ThingSmartBusinessExtensionKit', '~> 6.11.0'
+  pod 'ThingSmartActivatorBizBundle', '~> 6.11.0'
 
   # 构建和获取 ThingSmartCryption：从 IoT Tuya 开发者中心 构建并获取 ThingSmartCryption，详细教程请参考：构建 ThingSmartCryption 指南。
   # Building and Obtaining ThingSmartCryption from iot.tuya.com：Build and obtain ThingSmartCryption from IoT Tuya Developer Center. For a detailed tutorial, please refer to: ThingSmartCryption Building and Retrieval Guide.
@@ -54,7 +58,7 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     target.build_configurations.each do |config|
-      config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "12.0"
+      config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "13.0"
       config.build_settings["EXCLUDED_ARCHS[sdk=iphonesimulator*]"] = "arm64"
 
       # 为使用 use_frameworks! 时添加 Flutter 框架搜索路径

@@ -928,9 +928,10 @@ DEPENDENCIES:
   - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
   - share_plus (from `.symlinks/plugins/share_plus/ios`)
   - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
-  - ThingSmartActivatorBizBundle
+  - ThingSmartActivatorBizBundle (~> 6.11.0)
+  - ThingSmartBusinessExtensionKit (~> 6.11.0)
   - ThingSmartCryption (from `./`)
-  - ThingSmartHomeKit
+  - ThingSmartHomeKit (~> 6.11.0)
   - video_player_avfoundation (from `.symlinks/plugins/video_player_avfoundation/darwin`)
   - wakelock_plus (from `.symlinks/plugins/wakelock_plus/ios`)
 
@@ -1286,6 +1287,6 @@ SPEC CHECKSUMS:
   wakelock_plus: e29112ab3ef0b318e58cfa5c32326458be66b556
   YYModel: 2a7fdd96aaa4b86a824e26d0c517de8928c04b30
 
-PODFILE CHECKSUM: ddcd3c992480be1181beb1d90c70a5494cd0493d
+PODFILE CHECKSUM: ed5806272a24384fd687657080d27b1d2e3d69d3
 
 COCOAPODS: 1.16.2
